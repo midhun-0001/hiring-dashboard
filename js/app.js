@@ -900,21 +900,8 @@
     if (e.target.classList && e.target.classList.contains("modal")) closeModals();
   });
 
-  /* ---------------- auto refresh ---------------- */
-
-  function startAutoRefresh() {
-    setInterval(function () {
-      if (!API.isConfigured()) return;
-      loadDashboard();
-      if (state.currentView === "applicants" && state.allApplicants.length) loadAllApplicants();
-    }, 45000); // 45s
-  }
-
   /* ---------------- init ---------------- */
 
   initTheme();
   applyConfigUI();
-  startAutoRefresh();
-  // Safety: never let a loader hold the UI hostage if the backend hangs.
-  setTimeout(function () { hideLoading(); hideRoleLoader(); }, 12000);
 })();
