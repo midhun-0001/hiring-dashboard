@@ -473,7 +473,7 @@ body { transition: background-color 0.15s, color 0.15s; }
 
 /* Lottie satellite loader (light, centered, loops while data loads) */
 .lottie-loader {
-  display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;
   background: transparent;
 }
 #satellite-lottie { flex: none; }
@@ -558,8 +558,8 @@ body { transition: background-color 0.15s, color 0.15s; }
 .leo-link:hover { background: var(--active-tab); color: var(--active-tab-text); }
 .leo-title {
   font-family: "Archivo Black", "Arial Black", sans-serif;
-  font-size: 15px; letter-spacing: 0.02em; text-transform: lowercase; color: var(--text);
+  font-size: 12px; letter-spacing: 0.02em; text-transform: lowercase; color: var(--text);
 }
-.leo-sub { color: var(--muted); font-size: 11.5px; letter-spacing: 0.03em; }
+.leo-sub { color: var(--muted); font-size: 10px; letter-spacing: 0.03em; }
 
 
