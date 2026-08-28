@@ -90,7 +90,27 @@
 
   /* ---------------- config / banner ---------------- */
 
-  function hideLoading() { var o = $("loading-overlay"); if (o) o.classList.add("hidden"); }
+  var LEO_MAX = 24;          // constellation target shown next to the counter
+  var LEO_TICK = 230;        // ms per increment (-> ~24 sats in ~5.5s)
+  var leoTimer = null;
+
+  function startLeoCounter() {
+    var n = 0;
+    var numEl = $("leo-count-num");
+    if (numEl) numEl.textContent = "0";
+    clearInterval(leoTimer);
+    leoTimer = setInterval(function () {
+      if (numEl) {
+        n = (n >= LEO_MAX) ? 1 : n + 1;
+        numEl.textContent = n;
+      }
+    }, LEO_TICK);
+  }
+
+  function hideLoading() {
+    clearInterval(leoTimer);
+    var o = $("loading-overlay"); if (o) o.classList.add("hidden");
+  }
 
   function applyConfigUI() {
     var ok = API.isConfigured();
@@ -722,6 +742,7 @@
   /* ---------------- init ---------------- */
 
   initTheme();
+  startLeoCounter();
   applyConfigUI();
   startAutoRefresh();
 })();

@@ -13,9 +13,23 @@
 <body>
   <!-- Full-page loading overlay: shown until the first dashboard data loads -->
   <div id="loading-overlay" class="loading-overlay" aria-hidden="true">
-    <div class="loading-box">
-      <div class="spinner"></div>
-      <div class="loading-text">Loading…</div>
+    <div class="leo-loader">
+      <div class="leo-ring">
+        <span class="leo-core"></span>
+        <span class="sat s0"></span>
+        <span class="sat s1"></span>
+        <span class="sat s2"></span>
+        <span class="sat s3"></span>
+        <span class="sat s4"></span>
+        <span class="sat s5"></span>
+        <span class="sat s6"></span>
+        <span class="sat s7"></span>
+      </div>
+      <div class="leo-count">
+        <span id="leo-count-num">0</span><span class="leo-count-dot">/</span><span>24</span>
+      </div>
+      <div class="leo-title">building LEO PNT</div>
+      <div class="leo-sub">Low Earth Orbit · Positioning · Navigation · Timing</div>
     </div>
   </div>
 
