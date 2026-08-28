@@ -1,0 +1,722 @@
+/* ============================================================
+   Hiring Management Dashboard - application logic
+   Reads everything live from Google Sheets via Apps Script.
+   ============================================================ */
+
+(function () {
+  "use strict";
+
+  var state = {
+    dashboard: null,     // { stats, roles, upcomingInterviews, interviews }
+    allApplicants: [],   // global aggregated applicants
+    currentView: "dashboard",
+    currentRole: null,   // { title, status, department, ... }
+    currentCandidate: null,
+    currentIvSeg: "upcoming",
+    filters: { search: "", role: "", dept: "", status: "", priority: "" }
+  };
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* ---------------- helpers ---------------- */
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  // Visual status category -> {cls,label} WITHOUT changing the sheet value.
+  // Categorization is display-only; the original cell text is never modified.
+  function statusBadge(status) {
+    var s = String(status || "").trim().toLowerCase();
+    if (!s) return { cls: "badge-gray", label: "—" };
+    if (s.indexOf("reject") !== -1 || s.indexOf("backout") !== -1) return { cls: "badge-red", label: status };
+    if (s === "done" || s === "hired" || s === "selected" || s.indexOf("selected") !== -1) return { cls: "badge-green", label: status };
+    if (s.indexOf("call done") !== -1 || s === "details" || s.indexOf("screen") !== -1) return { cls: "badge-blue", label: status };
+    if (s.indexOf("final") !== -1) return { cls: "badge-green", label: status };
+    if (s === "next round" || s.indexOf("psr") !== -1) return { cls: "badge-green", label: status };
+    if (s.indexOf("cultural") !== -1 || s.indexOf("tech") !== -1 || s.indexOf("psr") !== -1) return { cls: "badge-blue", label: status };
+    if (s.indexOf("pending") !== -1 || s.indexOf("hold") !== -1) return { cls: "badge-amber", label: status };
+    return { cls: "badge-gray", label: status };
+  }
+
+  function openClose(status) {
+    var s = String(status || "").toLowerCase();
+    return s === "closed" ? { cls: "badge-gray", label: "Closed" } : { cls: "badge-green", label: "Open" };
+  }
+
+  function fmtTime(t) {
+    if (!t) return "";
+    var m = String(t).match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return t;
+    var h = parseInt(m[1], 10), min = m[2], ap = h >= 12 ? "PM" : "AM";
+    h = h % 12 || 12;
+    return h + ":" + min + " " + ap;
+  }
+
+  function fmtDate(d) {
+    if (!d) return "";
+    var m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return d;
+    var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return months[parseInt(m[2], 10) - 1] + " " + parseInt(m[3], 10) + ", " + m[1];
+  }
+
+  function deptForRole(title) {
+    var roles = (state.dashboard && state.dashboard.roles) || [];
+    for (var i = 0; i < roles.length; i++) if (roles[i].title === title) return roles[i].department;
+    return "";
+  }
+
+  function priorityLabel(p) {
+    var s = String(p || "").trim();
+    return s || "—";
+  }
+
+  function toast(msg, ms) {
+    var el = $("toast");
+    el.textContent = msg;
+    el.classList.remove("hidden");
+    clearTimeout(el._t);
+    el._t = setTimeout(function () { el.classList.add("hidden"); }, ms || 2200);
+  }
+
+  function showError(err) {
+    var b = $("error-banner");
+    $("error-text").textContent = String(err && err.message ? err.message : err);
+    b.classList.remove("hidden");
+  }
+
+  /* ---------------- config / banner ---------------- */
+
+  function applyConfigUI() {
+    var ok = API.isConfigured();
+    $("config-banner").classList.toggle("hidden", ok);
+    if (ok) loadDashboard();
+  }
+
+  function openConfigModal() { $("config-input").value = API.getUrl(); $("config-modal").classList.remove("hidden"); }
+  function closeModals() { $("config-modal").classList.add("hidden"); $("edit-modal").classList.add("hidden"); $("add-modal").classList.add("hidden"); }
+
+  /* ---------------- view switching ---------------- */
+
+  var VIEW_MAP = {
+    dashboard: "view-dashboard",
+    roles: "view-roles",
+    applicants: "view-applicants",
+    interviews: "view-interviews",
+    "role-detail": "view-role-detail",
+    candidate: "view-candidate"
+  };
+
+  function goView(name) {
+    state.currentView = name;
+    Object.keys(VIEW_MAP).forEach(function (k) { $(VIEW_MAP[k]).classList.toggle("hidden", k !== name); });
+    document.querySelectorAll(".nav-btn").forEach(function (b) {
+      b.classList.toggle("active", b.dataset.view === name);
+    });
+  }
+
+  /* ---------------- data loading ---------------- */
+
+  function setUpdated() {
+    $("last-updated").textContent = "Last updated: " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+
+  function loadDashboard() {
+    API.dashboard().then(function (data) {
+      state.dashboard = data;
+      renderStats(data.stats);
+      renderRoles("roles-grid", data.roles);
+      renderRoles("roles-grid-2", data.roles);
+      $("roles-count").textContent = data.roles.length + " role" + (data.roles.length === 1 ? "" : "s");
+      $("roles-count-2").textContent = data.roles.length + " role" + (data.roles.length === 1 ? "" : "s");
+      renderDashboardInterviews(data);
+      setUpdated();
+      // refresh global applicants if applicants view is active/loaded
+      if (state.allApplicants.length === 0 && state.currentView === "applicants") loadApplicantsLazy();
+    }).catch(function () {
+      renderStats({ openRoles: 0, closedRoles: 0, totalApplicants: 0 });
+      $("roles-grid").innerHTML = '<div class="empty">Could not load roles.</div>';
+      $("roles-grid-2").innerHTML = '<div class="empty">Could not load roles.</div>';
+      $("dashboard-upcoming").innerHTML = '<div class="empty">Could not load interviews.</div>';
+      $("dashboard-completed").innerHTML = '';
+      showError(arguments[0]);
+    });
+  }
+
+  function loadAllApplicants() {
+    API.applicants().then(function (data) {
+      state.allApplicants = data.applicants || [];
+      buildApplicantFilters();
+      renderApplicants();
+    }).catch(showError);
+  }
+
+  // load applicants lazily after dashboard (avoids two round-trips on load)
+  var loadedApplicantsOnInit = false;
+  function loadApplicantsLazy() {
+    if (loadedApplicantsOnInit) return;
+    loadedApplicantsOnInit = true;
+    loadAllApplicants();
+  }
+
+  /* ---------------- stats ---------------- */
+
+  function renderStats(s) {
+    var cards = [
+      { label: "Open Roles", value: s.openRoles || 0, color: "var(--green)" },
+      { label: "Closed Roles", value: s.closedRoles || 0, color: "var(--muted)" },
+      { label: "Total Applicants", value: s.totalApplicants || 0, color: "var(--brand)" }
+    ];
+    $("stats").innerHTML = cards.map(function (c) {
+      return '<div class="stat-card"><div class="stat-label">' + c.label + '</div>' +
+        '<div class="stat-value" style="color:' + c.color + '">' + c.value + '</div></div>';
+    }).join("");
+  }
+
+  /* ---------------- roles grid ---------------- */
+
+  function renderRoles(containerId, roles) {
+    var el = $(containerId);
+    if (!roles || !roles.length) { el.innerHTML = '<div class="empty">No roles found in the Roles tab.</div>'; return; }
+    el.innerHTML = roles.map(function (r) {
+      var oc = openClose(r.status);
+      var kit = r.interviewKit;
+      return '<div class="role-card" data-title="' + esc(r.title) + '">' +
+        '<div class="role-card-head"><div>' +
+          '<div class="role-card-title">' + esc(r.title) + '</div>' +
+          '<div class="dept">' + esc(r.department) + '</div>' +
+        '</div><span class="badge ' + oc.cls + '">' + oc.label + '</span></div>' +
+        '<div class="role-meta">' +
+          '<span class="role-meta-tag"><strong>' + (r.applicantCount || 0) + '</strong> applicants</span>' +
+          '<span class="role-meta-tag">Approval: ' + esc(r.approvalStage) + '</span>' +
+          '<span class="role-meta-tag">Interview Kit: ' + esc(kit) + '</span>' +
+        '</div></div>';
+    }).join("");
+    el.querySelectorAll(".role-card").forEach(function (card) {
+      card.addEventListener("click", function () { openRoleDetail(card.dataset.title); });
+    });
+  }
+
+  /* ---------------- role detail (pipeline) ---------------- */
+
+  function openRoleDetail(title) {
+    var roles = state.dashboard.roles;
+    var role = null;
+    roles.forEach(function (r) { if (!role && r.title === title) role = r; });
+    if (!role) return;
+    state.currentRole = role;
+    $("rd-title").textContent = role.title;
+    var oc = openClose(role.status);
+    $("rd-status").className = "badge " + oc.cls;
+    $("rd-status").textContent = oc.label;
+    $("rd-facts").innerHTML =
+      '<span>Status: ' + oc.label + '</span>' +
+      '<span>Department: ' + esc(role.department) + '</span>' +
+      '<span>Applicants: ' + (role.applicantCount || 0) + '</span>' +
+      '<span>Approval: ' + esc(role.approvalStage) + '</span>' +
+      '<span>Interview Kit: ' + esc(role.interviewKit) + '</span>';
+    goView("role-detail");
+    $("pipeline").innerHTML = '<div class="spinner"></div>';
+    API.roleApplicants(title).then(function (data) {
+      renderPipeline(data.applicants || []);
+    }).catch(showError);
+  }
+
+  function renderPipeline(applicants) {
+    var el = $("pipeline");
+    if (!applicants.length) { el.innerHTML = '<div class="empty">No applicants for this role yet.</div>'; return; }
+    var rows = applicants.map(function (a) {
+      var b = statusBadge(a.status);
+      return '<tr class="clickable" data-id="' + esc(a.id) + '">' +
+        '<td class="cell-primary">' + esc(a.name) + '</td>' +
+        '<td>' + belle(a) + '</td>' +
+        '<td>' + esc(a.experience || "—") + '</td>' +
+        '<td>' + esc(a.ctc || "—") + '</td>' +
+        '<td>' + esc(a.phone || "—") + '</td>' +
+      '</tr>';
+    }).join("");
+    el.innerHTML = '<div class="table-wrap"><table class="table">' +
+      '<thead><tr><th>Candidate</th><th>Status</th><th>Experience</th><th>CTC</th><th>Mobile</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table></div>';
+    el.querySelectorAll("tbody tr").forEach(function (tr) {
+      tr.addEventListener("click", function () { openCandidate(tr.dataset.id); });
+    });
+  }
+  // small helper: status badge cell
+  function belle(a) {
+    var b = statusBadge(a.status);
+    return '<span class="badge ' + b.cls + '">' + esc(b.label) + '</span>';
+  }
+
+  /* ---------------- dashboard interviews ---------------- */
+
+  function renderDashboardInterviews(data) {
+    var iv = (data && data.interviews) || {};
+    var upcoming = iv.upcoming || (data.upcomingInterviews) || [];
+    var completed = iv.recentCompleted || [];
+
+    // Upcoming in the right rail
+    var upEl = $("dashboard-upcoming");
+    if (!upcoming.length) {
+      upEl.innerHTML = '<div class="empty">No confirmed upcoming interviews.</div>';
+    } else {
+      upEl.innerHTML = upcoming.map(function (i) {
+        return '<div class="list-item" data-id="' + esc(i.id) + '">' +
+          '<div class="li-left"><div class="li-name">' + esc(i.candidate) + '</div>' +
+          '<div class="li-sub">' + esc(fmtDate(i.date)) + (i.time ? " · " + esc(fmtTime(i.time)) : "") + ' · ' + esc(i.role) + '</div></div>' +
+          '<div class="li-right"><span class="badge badge-blue">' + (i.time ? esc(fmtTime(i.time)) : "Scheduled") + '</span></div>' +
+        '</div>';
+      }).join("");
+      upEl.querySelectorAll(".list-item").forEach(function (it) {
+        it.addEventListener("click", function () { openCandidate(it.dataset.id); });
+      });
+    }
+
+    // Latest completed (past 5) below it
+    var coEl = $("dashboard-completed");
+    if (!completed.length) {
+      coEl.innerHTML = '<div class="empty">No completed applicants yet.</div>';
+    } else {
+      coEl.innerHTML = completed.map(function (i) {
+        return '<div class="list-item" data-id="' + esc(i.id) + '">' +
+          '<div class="li-left"><div class="li-name">' + esc(i.candidate) + '</div>' +
+          '<div class="li-sub">' + esc(i.role) + (i.date ? " · " + esc(fmtDate(i.date)) : "") + '</div></div>' +
+          '<div class="li-right"><span class="badge badge-green">' + esc(i.status || "Completed") + '</span></div>' +
+        '</div>';
+      }).join("");
+      coEl.querySelectorAll(".list-item").forEach(function (it) {
+        it.addEventListener("click", function () { openCandidate(it.dataset.id); });
+      });
+    }
+  }
+
+  /* ---------------- global applicants ---------------- */
+
+  function buildApplicantFilters() {
+    var roles = {}, depts = {}, statuses = {}, priorities = {};
+    state.allApplicants.forEach(function (a) {
+      if (a.roleTitle) roles[a.roleTitle] = true;
+      var d = deptForRole(a.roleTitle);
+      if (d) depts[d] = true;
+      if (a.status) statuses[a.status] = true;
+      if (a.priority) priorities[a.priority] = true;
+    });
+    $("filter-role").innerHTML = '<option value="">All roles</option>' + sortKeys(roles).map(function (k) { return '<option value="' + esc(k) + '">' + esc(k) + '</option>'; }).join("");
+    $("filter-dept").innerHTML = '<option value="">All departments</option>' + sortKeys(depts).map(function (k) { return '<option value="' + esc(k) + '">' + esc(k) + '</option>'; }).join("");
+    $("filter-status").innerHTML = '<option value="">All statuses</option>' + sortKeys(statuses).map(function (k) { return '<option value="' + esc(k) + '">' + esc(k) + '</option>'; }).join("");
+    $("filter-priority").innerHTML = '<option value="">All priorities</option>' + sortKeys(priorities).map(function (k) { return '<option value="' + esc(k) + '">' + esc(k) + '</option>'; }).join("");
+  }
+  function sortKeys(map) { return Object.keys(map).sort(function (a, b) { return a.localeCompare(b); }); }
+
+  function filteredApplicants() {
+    var f = state.filters;
+    var q = f.search.trim().toLowerCase();
+    return state.allApplicants.filter(function (a) {
+      if (q) {
+        var hay = (a.name + " " + a.email + " " + a.phone + " " + a.id + " " + a.roleTitle + " " + a.position).toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }
+      if (f.role && a.roleTitle !== f.role) return false;
+      if (f.dept) { var d = deptForRole(a.roleTitle); if (d !== f.dept) return false; }
+      if (f.status && (a.status || "") !== f.status) return false;
+      if (f.priority && (a.priority || "") !== f.priority) return false;
+      return true;
+    });
+  }
+
+  function renderApplicants() {
+    var body = $("applicants-body");
+    var empty = $("applicants-empty");
+    var list = filteredApplicants();
+    empty.classList.toggle("hidden", list.length !== 0);
+    if (!list.length) { body.innerHTML = ""; return; }
+    body.innerHTML = list.map(function (a) {
+      var b = statusBadge(a.status);
+      var roleD = deptForRole(a.roleTitle) || "—";
+      return '<tr class="clickable" data-id="' + esc(a.id) + '">' +
+        '<td><div class="cell-primary">' + esc(a.name) + '</div><div class="cell-sub">' + esc(a.id || "") + '</div></td>' +
+        '<td>' + esc(a.roleTitle) + '</td>' +
+        '<td>' + esc(roleD) + '</td>' +
+        '<td>' + esc(a.experience || "—") + '</td>' +
+        '<td>' + esc(a.ctc || "—") + '</td>' +
+        '<td>' + esc(priorityLabel(a.priority)) + '</td>' +
+        '<td><span class="badge ' + b.cls + '">' + esc(b.label) + '</span></td>' +
+        '<td>' + esc(a.time || "—") + '</td>' +
+      '</tr>';
+    }).join("");
+    body.querySelectorAll("tr").forEach(function (tr) {
+      tr.addEventListener("click", function () { openCandidate(tr.dataset.id); });
+    });
+  }
+
+  /* ---------------- candidates ---------------- */
+
+  function openCandidate(id) {
+    API.candidate(id).then(function (c) {
+      state.currentCandidate = c;
+      renderCandidate(c);
+    }).catch(showError);
+  }
+
+  function renderCandidate(c) {
+    $("cand-name").textContent = c.name || "Candidate";
+    $("cand-role-badge").textContent = c.roleTitle || c.tab || "";
+    $("cand-back-label").textContent = state.prevView === "role-detail" && state.currentRole ? state.currentRole.title : "Back";
+
+    var sections = [];
+
+    var contact = [
+      item("Full Name", esc(c.name)),
+      item("Email", c.email ? '<a href="mailto:' + esc(c.email) + '">' + esc(c.email) + '</a>' : "—"),
+      item("Phone", esc(c.phone || "—")),
+      item("Resume / CV", c.resume ? '<a href="' + esc(c.resume) + '" target="_blank" rel="noopener">View resume</a>' : "—"),
+      item("Experience", esc(c.experience || "—")),
+      item("CTC", esc(c.ctc || "—")),
+      item("Priority", esc(priorityLabel(c.priority)))
+    ];
+    sections.push(group("Candidate", grid(contact)));
+
+    var b = statusBadge(c.status);
+    var app = [
+      item("Position Applied For", esc(c.roleTitle || c.position || "—")),
+      item("Current Status", '<span class="badge ' + b.cls + '">' + esc(b.label || "—") + '</span>'),
+      item("Time we can go for", esc(c.time || "—"))
+    ];
+    sections.push(group("Application", grid(app)));
+
+    var reviews = [
+      review("Review (Anisha)", c.reviewAnisha),
+      review("Interviewer Review 1", c.review1),
+      review("Interviewer Review 2", c.review2),
+      review("Interviewer Review 3", c.review3),
+      review("Interviewer Review 4", c.review4)
+    ];
+    sections.push(group("Reviews", '<div class="cand-grid">' + reviews.join("") + '</div>'));
+
+    // Interview info (derived from time/scheduling) - show sorted date if present
+    var time = String(c.time || "").trim();
+    var ivBadge;
+    if (/20\d{2}-\d{1,2}-\d{1,2}/.test(time) || /(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(time)) {
+      ivBadge = '<span class="badge badge-blue">Scheduled</span>';
+    } else if (time) {
+      ivBadge = '<span class="badge badge-amber">Scheduling pending</span>';
+    } else {
+      ivBadge = '<span class="badge badge-gray">—</span>';
+    }
+    var intv = [ item("Interview / Scheduling", ivBadge + ' <span class="cell-sub">' + esc(time || "Not set") + '</span>') ];
+    sections.push(group("Interview", grid(intv)));
+
+    $("cand-sections").innerHTML = sections.join("");
+
+    $("cand-actions").innerHTML = [
+      '<button class="btn" data-edit="status">Edit Status</button>',
+      '<button class="btn" data-edit="priority">Edit Priority</button>',
+      '<button class="btn" data-edit="time">Edit Time / Scheduling</button>',
+      '<button class="btn" data-edit="ctc">Edit CTC</button>',
+      '<button class="btn" data-edit="reviews">Edit Reviews</button>',
+      '<button class="btn" data-edit="contact">Edit Contact</button>'
+    ].join("");
+    $("cand-actions").querySelectorAll("button").forEach(function (btn) {
+      btn.addEventListener("click", function () { openEdit(btn.dataset.edit); });
+    });
+
+    goView("candidate");
+  }
+
+  function item(k, v) { return '<div class="detail-item"><div class="k">' + k + '</div><div class="v">' + v + '</div></div>'; }
+  function review(k, v) {
+    var val = String(v || "").trim();
+    if (!val) return '<div class="review-item"><div class="k">' + k + '</div><div class="v not-reviewed">Not reviewed</div></div>';
+    return '<div class="review-item"><div class="k">' + k + '</div><div class="v">' + esc(val) + '</div></div>';
+  }
+  function grid(items) { return '<div class="cand-grid">' + items.join("") + '</div>'; }
+  function group(title, inner) { return '<div class="cand-group"><h3>' + title + '</h3>' + inner + '</div>'; }
+
+  /* ---------------- interviews page ---------------- */
+
+  function goInterviews(seg) {
+    state.currentIvSeg = seg;
+    document.querySelectorAll("#iv-seg .seg-btn").forEach(function (b) {
+      b.classList.toggle("active", b.dataset.iv === seg);
+    });
+    renderInterviewsPage();
+  }
+
+  function renderInterviewsPage() {
+    var iv = (state.dashboard && state.dashboard.interviews) || {};
+    var list = (state.currentIvSeg === "pending") ? (iv.pending || []) :
+               (state.currentIvSeg === "completed") ? (iv.completed || []) : (iv.upcoming || []);
+    var el = $("interviews-body");
+    if (!list.length) { el.innerHTML = '<div class="empty">Nothing here.</div>'; return; }
+
+    var rows = list.map(function (i) {
+      var badge = state.currentIvSeg === "pending"
+        ? '<span class="badge badge-amber">Scheduling pending</span>'
+        : state.currentIvSeg === "completed"
+          ? '<span class="badge badge-green">Completed</span>'
+          : '<span class="badge badge-blue">Scheduled</span>';
+      return '<tr data-id="' + esc(i.id) + '"><td class="cell-primary">' + esc(i.candidate) + '</td>' +
+        '<td>' + esc(i.role) + '</td>' +
+        '<td>' + esc(fmtDate(i.date)) + '</td>' +
+        '<td>' + esc(fmtTime(i.time)) + '</td>' +
+        '<td>' + esc(i.date ? i.date + (i.time ? " " + i.time : "") : "") + '</td>' +
+        '<td>' + esc(i.interviewer || "—") + '</td>' +
+        '<td>' + badge + '</td></tr>';
+    }).join("");
+
+    el.innerHTML = '<table class="table"><thead><tr>' +
+      '<th>Candidate</th><th>Role</th><th>Date</th><th>Time</th><th>Schedule info</th><th>Interviewer</th><th>Status</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table>';
+
+    el.querySelectorAll("tbody tr").forEach(function (tr) {
+      tr.addEventListener("click", function () { openCandidate(tr.dataset.id); });
+    });
+  }
+
+  /* ---------------- editing / sync ---------------- */
+
+  var FIELD_MAP = {
+    status: "J", priority: "I", time: "K", ctc: "H", experience: "G",
+    reviewAnisha: "L", review1: "M", review2: "N", review3: "O", review4: "P",
+    name: "B", email: "C", phone: "D", position: "E", resume: "F"
+  };
+  // friendly field name -> {label, schema for edit}
+  function field(val) { return { value: val || "" }; }
+
+  var EDIT_SCHEMAS = {
+    status: {
+      title: "Edit Status",
+      hint: "You can type any value — it is written to the sheet as-is.",
+      fields: [
+        { key: "status", label: "Status", type: "text" }
+      ]
+    },
+    priority: {
+      title: "Edit Priority",
+      fields: [ { key: "priority", label: "Priority", type: "text" } ]
+    },
+    time: {
+      title: "Edit Time / Scheduling",
+      hint: "e.g. 2026-08-29 11:00 AM (confirmed) or 'next week' (scheduling pending).",
+      fields: [ { key: "time", label: "Time we can go for", type: "text" } ]
+    },
+    ctc: {
+      title: "Edit CTC",
+      fields: [ { key: "ctc", label: "CTC", type: "text" } ]
+    },
+    reviews: {
+      title: "Edit Reviews",
+      fields: [
+        { key: "reviewAnisha", label: "Review (Anisha)", type: "textarea", rows: 3 },
+        { key: "review1", label: "Interviewer Review 1", type: "textarea", rows: 3 },
+        { key: "review2", label: "Interviewer Review 2", type: "textarea", rows: 3 },
+        { key: "review3", label: "Interviewer Review 3", type: "textarea", rows: 3 },
+        { key: "review4", label: "Interviewer Review 4", type: "textarea", rows: 3 }
+      ]
+    },
+    contact: {
+      title: "Edit Contact",
+      fields: [
+        { key: "name", label: "Full Name", type: "text" },
+        { key: "email", label: "Email", type: "text" },
+        { key: "phone", label: "Phone", type: "text" },
+        { key: "resume", label: "Resume / CV", type: "text" }
+      ]
+    }
+  };
+
+  var editState = null;
+
+  function openEdit(which) {
+    var schema = EDIT_SCHEMAS[which];
+    if (!schema || !state.currentCandidate) return;
+    var c = state.currentCandidate;
+    editState = { used: schema.fields.map(function (f) { return f.key; }) };
+    $("edit-title").textContent = schema.title;
+    var fields = schema.fields.map(function (f) {
+      var val = c[f.key] || "";
+      var input;
+      if (f.type === "textarea") {
+        input = '<textarea class="input" id="ef-' + f.key + '" rows="' + (f.rows || 3) + '">' + esc(val) + '</textarea>';
+      } else {
+        input = '<input class="input" id="ef-' + f.key + '" type="text" value="' + esc(val) + '" />';
+      }
+      return '<label class="field"><span>' + f.label + '</span>' + input + '</label>';
+    }).join("");
+    var hint = schema.hint ? '<p class="muted" style="font-size:12px;margin-bottom:12px">' + esc(schema.hint) + '</p>' : "";
+    $("edit-fields").innerHTML = hint + fields;
+    $("edit-modal").classList.remove("hidden");
+  }
+
+  $("edit-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (!editState || !state.currentCandidate) return;
+    var c = state.currentCandidate;
+    var jobs = editState.used.map(function (key) {
+      var el = $("ef-" + key);
+      var val = el ? el.value : "";
+      return API.update(c.id, key, val).then(function () {
+        c[key] = val;
+      });
+    });
+    Promise.all(jobs).then(function () {
+      closeModals();
+      toast("Saved to Google Sheet");
+      loadDashboard();
+      if (state.allApplicants.length) loadAllApplicants();
+      if (state.currentCandidate) renderCandidate(state.currentCandidate);
+    }).catch(function (err) { closeModals(); showError(err); });
+  });
+
+  /* ---------------- refresh ---------------- */
+
+  function refreshCurrent() {
+    API.refresh(); // bypass cache so the manual refresh always pulls fresh data
+    if (state.currentView === "candidate" && state.currentCandidate) { openCandidate(state.currentCandidate.id); return; }
+    if (state.currentView === "role-detail" && state.currentRole) { openRoleDetail(state.currentRole.title); return; }
+    loadDashboard();
+    if (state.currentView === "applicants") loadAllApplicants();
+    toast("Refreshing…");
+  }
+
+  /* ---------------- theme (dark mode) ---------------- */
+
+  var THEME_KEY = "hiring_theme";
+  function applyTheme(theme) {
+    if (!theme) theme = "light";
+    document.documentElement.setAttribute("data-theme", theme);
+    try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+  }
+  function toggleTheme() {
+    var cur = (document.documentElement.getAttribute("data-theme") === "dark") ? "light" : "dark";
+    applyTheme(cur);
+  }
+  function initTheme() {
+    var saved = "light";
+    try { saved = localStorage.getItem(THEME_KEY); } catch (e) {}
+    applyTheme(saved === "dark" ? "dark" : "light");
+  }
+
+  /* ---------------- events ---------------- */
+
+  document.querySelectorAll(".nav-btn").forEach(function (b) {
+    b.addEventListener("click", function () {
+      goView(b.dataset.view);
+      if (b.dataset.view === "applicants" && !state.allApplicants.length) loadAllApplicants();
+      if (b.dataset.view === "interviews") renderInterviewsPage();
+      if (b.dataset.view === "roles") renderRoles("roles-grid-2", (state.dashboard && state.dashboard.roles) || []);
+    });
+  });
+
+  $("refresh-btn").addEventListener("click", refreshCurrent);
+  $("theme-toggle").addEventListener("click", toggleTheme);
+  $("config-btn").addEventListener("click", openConfigModal);
+  $("config-modal-close").addEventListener("click", closeModals);
+
+  $("config-form").addEventListener("submit", function (e) { e.preventDefault(); API.setUrl($("config-input").value.trim()); closeModals(); applyConfigUI(); });
+  $("config-clear-btn").addEventListener("click", function () { API.setUrl(""); closeModals(); applyConfigUI(); });
+  $("config-save-btn").addEventListener("click", function () { API.setUrl($("config-url-input").value.trim()); applyConfigUI(); });
+  $("error-dismiss").addEventListener("click", function () { $("error-banner").classList.add("hidden"); });
+
+  $("role-back-btn").addEventListener("click", goBack);
+  $("cand-back-btn").addEventListener("click", goBack);
+
+  function goBack() {
+    if (state.currentView === "candidate") {
+      goView(state.prevView || "dashboard");
+      return;
+    }
+    goView("dashboard");
+  }
+
+  // remember previous view when opening candidate
+  var _openCandidate = openCandidate;
+  openCandidate = function (id) {
+    state.prevView = state.currentView;
+    _openCandidate(id);
+  };
+
+  $("edit-close").addEventListener("click", closeModals);
+  $("edit-cancel").addEventListener("click", closeModals);
+
+  /* ---------------- add candidate ---------------- */
+
+  function openAddModal() {
+    var roles = (state.dashboard && state.dashboard.roles) || [];
+    var sel = $("add-role");
+    sel.innerHTML = '<option value="">Select role…</option>' + roles.map(function (r) {
+      return '<option value="' + esc(r.title) + '">' + esc(r.title) + '</option>';
+    }).join("");
+    // reset form
+    ["name","email","phone","experience","ctc","priority","status","resume","time"].forEach(function (k) {
+      var el = $("add-" + k); if (el) el.value = "";
+    });
+    sel.value = "";
+    $("add-modal").classList.remove("hidden");
+  }
+
+  $("add-candidate-btn").addEventListener("click", openAddModal);
+  $("add-candidate-btn-2").addEventListener("click", openAddModal);
+  $("add-close").addEventListener("click", closeModals);
+  $("add-cancel").addEventListener("click", closeModals);
+
+  $("add-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var role = $("add-role").value;
+    var name = $("add-name").value.trim();
+    if (!role) { toast("Please select a role"); return; }
+    if (!name) { toast("Please enter a name"); return; }
+    var fields = {
+      role: role,
+      name: name,
+      email: $("add-email").value.trim(),
+      phone: $("add-phone").value.trim(),
+      experience: $("add-experience").value.trim(),
+      ctc: $("add-ctc").value.trim(),
+      priority: $("add-priority").value.trim(),
+      status: $("add-status").value.trim(),
+      resume: $("add-resume").value.trim(),
+      time: $("add-time").value.trim(),
+      position: role
+    };
+    API.addApplicant(fields).then(function (res) {
+      closeModals();
+      toast("Added " + name + " to " + role + " tab");
+      loadDashboard();
+      if (state.allApplicants.length) loadAllApplicants();
+    }).catch(function (err) { closeModals(); showError(err); });
+  });
+
+  $("app-search").addEventListener("input", function (e) { state.filters.search = e.target.value; renderApplicants(); });
+  $("filter-role").addEventListener("change", function (e) { state.filters.role = e.target.value; renderApplicants(); });
+  $("filter-dept").addEventListener("change", function (e) { state.filters.dept = e.target.value; renderApplicants(); });
+  $("filter-status").addEventListener("change", function (e) { state.filters.status = e.target.value; renderApplicants(); });
+  $("filter-priority").addEventListener("change", function (e) { state.filters.priority = e.target.value; renderApplicants(); });
+
+  document.querySelectorAll("#iv-seg .seg-btn").forEach(function (b) {
+    b.addEventListener("click", function () { goInterviews(b.dataset.iv); });
+  });
+
+  document.addEventListener("click", function (e) {
+    if (e.target.classList && e.target.classList.contains("modal")) closeModals();
+  });
+
+  /* ---------------- auto refresh ---------------- */
+
+  function startAutoRefresh() {
+    setInterval(function () {
+      if (!API.isConfigured()) return;
+      loadDashboard();
+      if (state.currentView === "applicants" && state.allApplicants.length) loadAllApplicants();
+    }, 45000); // 45s
+  }
+
+  /* ---------------- init ---------------- */
+
+  initTheme();
+  applyConfigUI();
+  startAutoRefresh();
+})();

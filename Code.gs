@@ -1,0 +1,514 @@
+/**
+ * HIRING MANAGEMENT DASHBOARD - Google Apps Script backend (JSON API only)
+ *
+ * MODEL  (matches the existing spreadsheet - source of truth)
+ * ----------------------------------------------------------------------
+ *  - A "Roles" master tab: one row per role.
+ *  - One tab per role (named after the role title): that role's applicants.
+ *  - Every sheet EXCEPT "Roles" is treated as a role's applicant tab and is
+ *    auto-detected (no hard-coded tab list).
+ *
+ * ROLES TAB COLUMNS
+ *   A Role ID | B Role Title | C Department | D Status (Open/Closed)
+ *   E Approval Stage | F Interview Kit
+ *
+ * APPLICANT TAB COLUMNS (identical for every role tab)
+ *   A Applicant ID | B Full Name | C Email ID | D Phone Number
+ *   E Position Applied For | F Resume/CV | G Total Years of Experience
+ *   H CTC | I Priority | J Status | K Time we can go for
+ *   L Review (Anisha) | M Interviewer Review 1 | N Interviewer Review 2
+ *   O Interviewer Review 3 | P Interviewer Review 4
+ *
+ * NOTE: Applicant "Status" (col J) values are NEVER normalized or overwritten
+ * automatically. The original sheet value is always preserved; the UI only
+ * *displays* them (and may visually categorize them).
+ *
+ *
+ * API (all GET + query params to avoid Apps Script CORS preflight)
+ *   ?action=dashboard                 -> { stats, roles, upcomingInterviews }
+ *   ?action=roles                     -> role cards (with applicantCount)
+ *   ?action=roleapplicants&role=Title -> applicants for one role tab
+ *   ?action=applicants                -> ALL applicants across all role tabs
+ *   ?action=candidate&id=APP123       -> one applicant by Applicant ID
+ *   ?action=interviews                -> upcoming / pending / completed
+ *   ?action=update&id=APP123&field=status&value=.. -> update one field
+ *
+ * Nothing in this file exposes credentials. The client only sees the /exec URL.
+ */
+
+var SETTINGS = {
+  ROLES_TAB_NAME: "Roles",
+  ROLES_COLS: { id:0, title:1, department:2, status:3, approvalStage:4, interviewKit:5 },
+  APP_COLS: {
+    applicantId:0, name:1, email:2, phone:3, position:4, resume:5,
+    experience:6, ctc:7, priority:8, status:9, time:10,
+    reviewAnisha:11, review1:12, review2:13, review3:14, review4:15
+  }
+};
+
+function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
+function norm_(v) { return (v !== undefined && v !== null) ? String(v).trim() : ""; }
+// Normalize a role/tab name for fuzzy matching: lowercase, drop numeric
+// prefixes (e.g. "5. Mission Planning Engineer" -> "Mission Planning Engineer"),
+// drop common Google Form suffixes and punctuation, collapse whitespace.
+// Used ONLY for matching; the original sheet/tab names are never renamed.
+function normTitle_(s) {
+  return norm_(s)
+    .toLowerCase()
+    .replace(/^\s*\d+(\.|\)|\s)*\s*/, " ")   // leading number prefix: "5. " / "5) " / "5 "
+    .replace(/\(responses\)/g, " ")
+    .replace(/\((form responses)\)/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function pad2_(n) { return ("0" + n).slice(-2); }
+function isYes_(v) { var s = norm_(v).toLowerCase(); return s==="yes"||s==="y"||s==="true"||s==="1"||s==="complete"||s==="done"||s==="set"; }
+function text_(v) { return { value: String(v === undefined || v === null ? "" : v) }; }
+
+/* ============================================================
+ * Tab discovery - every sheet except "Roles" is an applicant tab
+ * ============================================================ */
+
+function roleTabs_() {
+  var all = ss_().getSheets();
+  return all.filter(function (sh) { return sh.getName() !== SETTINGS.ROLES_TAB_NAME; });
+}
+
+/* ============================================================
+ * Roles tab
+ * ============================================================ */
+
+function readRoles_() {
+  var sh = ss_().getSheetByName(SETTINGS.ROLES_TAB_NAME);
+  if (!sh) return [];
+  var lastRow = sh.getLastRow();
+  if (lastRow < 1) return [];
+  var lastCol = Math.min(sh.getLastColumn(), 6);
+  var data = sh.getRange(1, 1, lastRow, lastCol).getValues();
+  var C = SETTINGS.ROLES_COLS;
+  var out = [];
+  for (var i = 1; i < data.length; i++) {
+    var r = data[i];
+    var title = norm_(r[C.title]);
+    if (!title) continue;
+    out.push({
+      id: norm_(r[C.id]),
+      title: title,
+      department: norm_(r[C.department]),
+      status: norm_(r[C.status]).toLowerCase() === "closed" ? "closed" : "open",
+      approvalStage: norm_(r[C.approvalStage]) || "(none)",
+      interviewKit: isYes_(r[C.interviewKit]) ? "Complete" : "Incomplete"
+    });
+  }
+  return out;
+}
+
+/* ============================================================
+ * Applicant tabs
+ * ============================================================ */
+
+// Map one raw row -> applicant object with meta.
+function mapApplicant_(row, tab, title) {
+  var C = SETTINGS.APP_COLS;
+  return {
+    id: norm_(row[C.applicantId]),
+    name: norm_(row[C.name]),
+    email: norm_(row[C.email]),
+    phone: norm_(row[C.phone]),
+    position: norm_(row[C.position]) || title,
+    resume: norm_(row[C.resume]),
+    experience: norm_(row[C.experience]),
+    ctc: norm_(row[C.ctc]),
+    priority: norm_(row[C.priority]),
+    status: norm_(row[C.status]),
+    time: norm_(row[C.time]),
+    reviewAnisha: norm_(row[C.reviewAnisha]),
+    review1: norm_(row[C.review1]),
+    review2: norm_(row[C.review2]),
+    review3: norm_(row[C.review3]),
+    review4: norm_(row[C.review4]),
+    tab: tab,
+    roleTitle: title || tab
+  };
+}
+
+// All applicants for one tab (row numbers preserved for updates).
+function readTab_(tab) {
+  var sh = ss_().getSheetByName(tab);
+  var out = [];
+  if (!sh) return out;
+  var cleanTitle = roleTitleForTab_(tab);
+  var lastRow = sh.getLastRow();
+  if (lastRow < 1) return out;
+  var lastCol = sh.getLastColumn();
+  var data = sh.getRange(1, 1, lastRow, lastCol).getValues();
+  for (var i = 1; i < data.length; i++) {
+    var a = mapApplicant_(data[i], tab, cleanTitle);
+    if (!a.name && !a.id) continue; // skip fully-blank rows
+    a.row = i + 1; // real sheet row (row 1 = header)
+    out.push(a);
+  }
+  return out;
+}
+
+// Role title lookup by tab name (fall back to tab name). Matches by Role ID
+// first, then by fuzzy-normalized title so tabs like "Satellite Systems
+// Engineer (Responses)" map to the clean "Satellite Systems Engineer" role.
+function roleTitleForTab_(tab) {
+  var roles = readRoles_();
+  var found = null;
+  roles.forEach(function (r) {
+    if (!found && r.id && norm_(r.id).toLowerCase() === norm_(tab).toLowerCase()) found = r.title;
+    if (!found && normTitle_(r.title) === normTitle_(tab)) found = r.title;
+  });
+  return found || tab;
+}
+
+/* ============================================================
+ * Interview parsing
+ * ============================================================ */
+
+// Decide if a "time we can go for" string represents a CONFIRMED interview
+// date/time, vs open/relative scheduling info.
+function parseInterview_(applicant) {
+  var raw = applicant.time;
+  var s = norm_(raw).toLowerCase();
+
+  var CONFIRMED = /(20\d{2}-\d{1,2}-\d{1,2})|(\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\s+\d{4})|(\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\b)|((jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\s+\d{1,2}(st|nd|rd|th)?\b)/i;
+  // relative/ambiguous scheduling cues
+  var RELATIVE = /(tues|wed|thur|fri|sat|sun|mon)|(\d+\s*(days?|weeks?|months?))|(1\s*month)|(next\s+(week|month))|(\btomorrow\b)|(\bnext\s+round\b)/i;
+
+  if (s && CONFIRMED.test(s)) {
+    return { kind: "confirmed", raw: raw, date: extractDate_(s), time: extractTime_(s) };
+  }
+  if (s && RELATIVE.test(s)) {
+    return { kind: "pending", raw: raw, date: "", time: "" };
+  }
+  if (s) {
+    // some text but not clearly a date -> treat as scheduling info
+    return { kind: "pending", raw: raw, date: "", time: "" };
+  }
+  return { kind: "none", raw: "", date: "", time: "" };
+}
+
+function extractTime_(s) {
+  var m = s.match(/(\d{1,2})(:\d{2})?\s*(am|pm)/);
+  if (!m) return "";
+  var h = parseInt(m[1], 10), min = m[2] ? m[2].slice(1) : "00";
+  var ap = (m[3] || "").toLowerCase();
+  if (ap === "pm" && h < 12) h += 12;
+  if (ap === "am" && h === 12) h = 0;
+  return pad2_(h) + ":" + min + (ap ? " " + m[3] : "");
+}
+
+var MONTHS = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12 };
+function extractDate_(s) {
+  var m;
+  m = s.match(/(20\d{2})-(\d{1,2})-(\d{1,2})/);
+  if (m) return m[1] + "-" + pad2_(m[2]) + "-" + pad2_(m[3]);
+  m = s.match(/(\d{1,2})\s+([a-z]+)\w*\s+(\d{4})/);
+  if (m && MONTHS[m[2]] != null) return m[3] + "-" + pad2_(MONTHS[m[2]]) + "-" + pad2_(m[1]);
+  // "28 aug ..." (day + month anywhere in the string, current year)
+  m = s.match(/(\d{1,2})(st|nd|rd|th)?\s+([a-z]+)\w*/);
+  if (m && MONTHS[m[3]] != null) return new Date().getFullYear() + "-" + pad2_(MONTHS[m[3]]) + "-" + pad2_(m[1]);
+  // "aug 28" form
+  m = s.match(/([a-z]+)\w*\s+(\d{1,2})(st|nd|rd|th)?/);
+  if (m && MONTHS[m[1]] != null) return new Date().getFullYear() + "-" + pad2_(MONTHS[m[1]]) + "-" + pad2_(m[2]);
+  return "";
+}
+
+/* ============================================================
+ * Aggregation
+ * ============================================================ */
+
+function allTabs_(roles) {
+  var tabs = roleTabs_();
+  var result = [];
+  tabs.forEach(function (sh) {
+    var tab = sh.getName();
+    var title = null;
+    roles.forEach(function (r) {
+      if (!title && r.id && norm_(r.id).toLowerCase() === norm_(tab).toLowerCase()) title = r.title;
+      if (!title && normTitle_(r.title) === normTitle_(tab)) title = r.title;
+    });
+    result.push({ tab: tab, title: title || tab });
+  });
+  return result;
+}
+
+// Attach applicantCount to each role from its matching tab (count *all* rows
+// with at least a name), even if the tab isn't in the Roles tab list.
+function withCounts_(roles) {
+  var tabs = allTabs_(roles);
+  var counts = {};
+  var tabTitles = {};
+  tabs.forEach(function (t) { counts[t.tab] = readTab_(t.tab).length; tabTitles[t.tab] = t.title; });
+  roles.forEach(function (r) {
+    var key = null;
+    tabs.forEach(function (t) {
+      if (!key && normTitle_(t.tab) === normTitle_(r.title)) key = t.tab;
+      if (!key && r.id && norm_(t.tab).toLowerCase() === norm_(r.id).toLowerCase()) key = t.tab;
+    });
+    r.applicantCount = key ? counts[key] : 0;
+    r.tab = key || r.title;
+  });
+  return roles;
+}
+
+function buildDashboard_() {
+  var roles = withCounts_(readRoles_());
+  var openRoles = 0, closedRoles = 0;
+  roles.forEach(function (r) {
+    if (r.status === "open") openRoles++; else closedRoles++;
+  });
+
+  var all = allApplicants_(roles);
+  var totalApplicants = all.length;
+  var upcoming = [], pending = [], completed = [];
+
+  all.forEach(function (a) {
+    var iv = parseInterview_(a);
+    a._iv = iv;
+    if (iv.kind === "confirmed") upcoming.push(interviewRow_(a, iv));
+    else if (iv.kind === "pending") pending.push(interviewRow_(a, iv));
+  });
+  // completed = anyone with a status that signals done/hired/rejected already
+  completed = all.filter(function (a) {
+    return isCompleted_(a.status);
+  }).map(function (a) { return interviewRow_(a, a._iv || { kind: "none", raw: "", date: "", time: "" }); });
+
+  upcoming.sort(byDate_);
+  // Order completed by interview/scheduling date, newest first (dated ones
+  // first, then undated). recentCompleted = latest 5.
+  completed.sort(byDateDesc_);
+
+  return {
+    stats: { openRoles: openRoles, closedRoles: closedRoles, totalApplicants: totalApplicants },
+    roles: roles,
+    upcomingInterviews: upcoming,
+    interviews: {
+      upcoming: upcoming,
+      pending: pending,
+      completed: completed,
+      recentCompleted: completed.slice(0, 5)
+    }
+  };
+}
+
+function byDateDesc_(x, y) {
+  var d = (x.date || "0000") + " " + (x.time || "");
+  var e = (y.date || "0000") + " " + (y.time || "");
+  return e.localeCompare(d);
+}
+
+function byDate_(x, y) {
+  var d = (x.date || "9999") + " " + (x.time || "");
+  var e = (y.date || "9999") + " " + (y.time || "");
+  return d.localeCompare(e);
+}
+
+function isCompleted_(status) {
+  var s = norm_(status).toLowerCase();
+  return s.indexOf("reject") !== -1 || s.indexOf("selected") !== -1 || s === "done" || s === "hired";
+}
+
+function interviewRow_(a, iv) {
+  return {
+    candidate: a.name,
+    role: a.roleTitle,
+    tab: a.tab,
+    row: a.row,
+    id: a.id,
+    date: iv.date,
+    time: iv.time,
+    raw: iv.raw,
+    interviewer: firstReview_(a),
+    status: a.status,
+    kind: iv.kind
+  };
+}
+
+function firstReview_(a) {
+  return a.review1 || a.reviewAnisha || a.review2 || a.review3 || a.review4 || "";
+}
+
+function allApplicants_(roles) {
+  var all = [];
+  allTabs_(roles).forEach(function (t) {
+    readTab_(t.tab).forEach(function (a) {
+      // roleTitle = the CLEAN role title (from the Roles tab mapping).
+      // If a tab isn't in the Roles master list, fall back to the tab name.
+      a.roleTitle = t.title || a.tab;
+      all.push(a);
+    });
+  });
+  return all;
+}
+
+/* ============================================================
+ * Application -> sheet mapping helpers
+ * ============================================================ */
+
+var FIELD_MAP = {
+  status: "J", priority: "I", time: "K", ctc: "H", experience: "G",
+  reviewAnisha: "L", review1: "M", review2: "N", review3: "O", review4: "P",
+  name: "B", email: "C", phone: "D", position: "E", resume: "F"
+};
+
+// Find the applicant row by Applicant ID (case-insensitive) across all tabs,
+// or within a given tab if provided. Returns {tab, row} or null.
+function locateApplicant_(id, preferredTab) {
+  if (!id) return null;
+  var tabs = preferredTab ? [{ tab: preferredTab }] : allTabs_(readRoles_());
+  for (var i = 0; i < tabs.length; i++) {
+    var list = readTab_(tabs[i].tab);
+    for (var j = 0; j < list.length; j++) {
+      if (norm_(list[j].id).toLowerCase() === norm_(id).toLowerCase()) {
+        return { tab: tabs[i].tab, row: list[j].row };
+      }
+    }
+  }
+  return null;
+}
+
+/* ============================================================
+ * HTTP handler
+ * ============================================================ */
+
+function doGet(e) {
+  try {
+    var p = (e && e.parameter) || {};
+    var action = p.action || "dashboard";
+
+    if (action === "dashboard") {
+      return json_(buildDashboard_());
+
+    } else if (action === "roles") {
+      return json_(withCounts_(readRoles_()));
+
+    } else if (action === "applicants") {
+      return json_({ applicants: allApplicants_(readRoles_()) });
+
+    } else if (action === "roleapplicants") {
+      var role = p.role || p.title || "";
+      var tab = tabForRole_(role);
+      if (!tab) return json_({ role: role, applicants: [] });
+      return json_({ role: role, tab: tab, applicants: readTab_(tab) });
+
+    } else if (action === "candidate") {
+      var id = p.id || "";
+      var tab = p.tab || "";
+      var loc = tab ? findInTab_(tab, id) : locateApplicant_(id);
+      if (!loc) throw new Error("candidate not found: " + id);
+      var hit = readTab_(loc.tab).filter(function (a) { return a.row === loc.row; })[0];
+      if (!hit) throw new Error("candidate not found");
+      return json_(hit);
+
+    } else if (action === "interviews") {
+      return json_(buildDashboard_().interviews);
+
+    } else if (action === "update") {
+      var uid = p.id || "";
+      var field = p.field || p.col || "";
+      var val = p.value !== undefined ? p.value : "";
+      var utab = p.tab || "";
+      var loc = utab ? findInTab_(utab, uid) : locateApplicant_(uid);
+      if (!loc) throw new Error("applicant not found: " + uid);
+      var letter = FIELD_MAP[String(field).toLowerCase()] || (String(field).length === 1 ? String(field).toUpperCase() : "");
+      if (!letter) throw new Error("unknown field: " + field);
+      var sh = ss_().getSheetByName(loc.tab);
+      var row = sh.getRange(loc.row, 1, 1, sh.getLastColumn()).getValues()[0];
+      row[letter.charCodeAt(0) - 65] = String(val);
+      sh.getRange(loc.row, 1, 1, row.length).setValues([row]);
+      return json_({ ok: true, tab: loc.tab, row: loc.row, field: field, value: String(val) });
+
+    } else if (action === "addapplicant") {
+      var arole = p.role || "";
+      var atab = tabForRole_(arole);
+      if (!atab) throw new Error("no applicant sheet found for role: " + arole);
+      var ash = ss_().getSheetByName(atab);
+      var data = addApplicant_(ash, p);
+      return json_({ ok: true, tab: atab, row: data.row, id: data.id, applicant: data.applicant });
+
+    } else {
+      throw new Error("unknown action: " + action);
+    }
+  } catch (err) {
+    return error_(err);
+  }
+}
+
+function findInTab_(tab, id) {
+  var list = readTab_(tab);
+  for (var j = 0; j < list.length; j++) {
+    if (norm_(list[j].id).toLowerCase() === norm_(id).toLowerCase()) return { tab: tab, row: list[j].row };
+  }
+  return null;
+}
+
+function tabForRole_(role) {
+  var roles = readRoles_();
+  var title = null;
+  roles.forEach(function (r) {
+    if (!title && (norm_(r.title) === norm_(role) || normTitle_(r.title) === normTitle_(role))) title = r.title;
+    if (!title && r.id && norm_(r.id).toLowerCase() === norm_(role).toLowerCase()) title = r.title;
+  });
+  if (!title) title = role; // role param may itself be a tab name
+  // find an actual sheet whose (normalized) name matches the role title
+  var sheets = roleTabs_();
+  var match = null;
+  sheets.forEach(function (sh) {
+    var n = sh.getName();
+    if (!match && normTitle_(n) === normTitle_(title)) match = n;
+    if (!match && norm_(n).toLowerCase() === norm_(title).toLowerCase()) match = n;
+  });
+  return match;
+}
+
+// Generate the next Applicant ID across all tabs: max existing numeric suffix + 1.
+function nextApplicantId_() {
+  var roles = readRoles_();
+  var max = 0;
+  allTabs_(roles).forEach(function (t) {
+    readTab_(t.tab).forEach(function (a) {
+      var m = norm_(a.id).match(/app?\s*(\d+)/i);
+      if (m) { var n = parseInt(m[1], 10); if (n > max) max = n; }
+    });
+  });
+  return "APP" + pad2_(max + 1);
+}
+
+// Append a new applicant row to the given applicant sheet.
+function addApplicant_(sh, p) {
+  var C = SETTINGS.APP_COLS;
+  var row = ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
+  row[C.applicantId] = norm_(p.app && p.app.id ? p.app.id : nextApplicantId_());
+  row[C.name] = norm_(p.name);
+  row[C.email] = norm_(p.email);
+  row[C.phone] = norm_(p.phone);
+  row[C.position] = norm_(p.position);
+  row[C.resume] = norm_(p.resume);
+  row[C.experience] = norm_(p.experience);
+  row[C.ctc] = norm_(p.ctc);
+  row[C.priority] = norm_(p.priority);
+  row[C.status] = norm_(p.status);
+  row[C.time] = norm_(p.time);
+  row[C.reviewAnisha] = norm_(p.reviewAnisha);
+  row[C.review1] = norm_(p.review1);
+  row[C.review2] = norm_(p.review2);
+  row[C.review3] = norm_(p.review3);
+  row[C.review4] = norm_(p.review4);
+  var newRow = sh.getLastRow() + 1;
+  sh.getRange(newRow, 1, 1, 16).setValues([row]);
+  var applicant = mapApplicant_(row, sh.getName(), roleTitleForTab_(sh.getName()));
+  applicant.row = newRow;
+  return { row: newRow, id: row[C.applicantId], applicant: applicant };
+}
+
+function json_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+function error_(err) {
+  return ContentService.createTextOutput(JSON.stringify({ error: String(err.message || err) })).setMimeType(ContentService.MimeType.JSON);
+}

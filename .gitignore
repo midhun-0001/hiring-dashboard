@@ -1,0 +1,4 @@
+# Settings cache (browser-side only)
+*.localstorage
+.DS_Store
+Thumbs.db
