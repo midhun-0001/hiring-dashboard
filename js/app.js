@@ -101,6 +101,9 @@
   function hideLoading() {
     var o = $("loading-overlay"); if (o) o.classList.add("hidden");
   }
+  function showRoleLoader() {
+    var o = $("role-loader"); if (o) o.classList.remove("hidden");
+  }
   function hideRoleLoader() {
     var o = $("role-loader"); if (o) o.classList.add("hidden");
   }
@@ -132,6 +135,7 @@
     document.querySelectorAll(".nav-btn").forEach(function (b) {
       b.classList.toggle("active", b.dataset.view === name);
     });
+    if (name === "dashboard") showRoleLoader(); // show the satellite again when landing
   }
 
   /* ---------------- data loading ---------------- */
@@ -141,6 +145,7 @@
   }
 
   function loadDashboard() {
+    showRoleLoader();
     inlineLoading($("roles-grid"), "Loading roles…");
     inlineLoading($("roles-grid-2"), "Loading roles…");
     inlineLoading($("dashboard-upcoming"), "Loading interviews…");
@@ -155,7 +160,7 @@
       renderDashboardInterviews(data);
       setUpdated();
       hideLoading();
-      hideRoleLoader();
+      setTimeout(hideRoleLoader, 900); // keep the satellite visible briefly on the landing page
       // refresh global applicants if applicants view is active/loaded
       if (state.allApplicants.length === 0 && state.currentView === "applicants") loadApplicantsLazy();
     }).catch(function () {
