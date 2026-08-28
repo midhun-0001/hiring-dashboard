@@ -11,6 +11,14 @@
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
+  <!-- Full-page loading overlay: shown until the first dashboard data loads -->
+  <div id="loading-overlay" class="loading-overlay" aria-hidden="true">
+    <div class="loading-box">
+      <div class="spinner"></div>
+      <div class="loading-text">Loading…</div>
+    </div>
+  </div>
+
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand">

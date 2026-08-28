@@ -90,10 +90,13 @@
 
   /* ---------------- config / banner ---------------- */
 
+  function hideLoading() { var o = $("loading-overlay"); if (o) o.classList.add("hidden"); }
+
   function applyConfigUI() {
     var ok = API.isConfigured();
     $("config-banner").classList.toggle("hidden", ok);
     if (ok) loadDashboard();
+    else hideLoading(); // nothing to load yet -> show the connect banner
   }
 
   function openConfigModal() { $("config-input").value = API.getUrl(); $("config-modal").classList.remove("hidden"); }
@@ -134,9 +137,11 @@
       $("roles-count-2").textContent = data.roles.length + " role" + (data.roles.length === 1 ? "" : "s");
       renderDashboardInterviews(data);
       setUpdated();
+      hideLoading();
       // refresh global applicants if applicants view is active/loaded
       if (state.allApplicants.length === 0 && state.currentView === "applicants") loadApplicantsLazy();
     }).catch(function () {
+      hideLoading();
       renderStats({ openRoles: 0, closedRoles: 0, totalApplicants: 0 });
       $("roles-grid").innerHTML = '<div class="empty">Could not load roles.</div>';
       $("roles-grid-2").innerHTML = '<div class="empty">Could not load roles.</div>';
