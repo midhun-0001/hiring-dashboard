@@ -8,7 +8,6 @@
 
 var API = (function () {
   var STORAGE_KEY = "hiring_app_url";
-  var USER_KEY = "hiring_user";   // logged-in user id (or name), persisted
   // Default Apps Script Web App URL. Overridable via Settings (stored in
   // localStorage). No sheet IDs / credentials are exposed - just the public
   // /exec endpoint.
@@ -26,17 +25,6 @@ var API = (function () {
     return !!u && u.indexOf("/exec") !== -1;
   }
 
-  // ---- auth / session ----
-  var currentUser = null; // {id,name,role,access,...} as returned by login
-  function loadUser() {
-    try { return localStorage.getItem(USER_KEY) || ""; } catch (e) { return ""; }
-  }
-  function setUserParam(p) {
-    var u = currentUser && currentUser.id ? currentUser.id : loadUser();
-    if (u) p.user = u;
-    return p;
-  }
-
   // Read-only actions are cached in-memory for a short TTL so navigation,
   // role-detail opens and view switches don't re-hit the network each time.
   // Writes always go to the server and clear the cache.
@@ -44,7 +32,7 @@ var API = (function () {
   var cache = {};
   var CACHE_ACTIONS = {
     dashboard: true, roles: true, roleapplicants: true,
-    applicants: true, interviews: true, candidate: true
+    applicants: true, interviews: true, calendar: true, candidate: true
   };
 
   function cacheKey(params) {
@@ -86,7 +74,6 @@ var API = (function () {
         reject(new Error("Not configured: set your Apps Script Web App URL."));
         return;
       }
-      setUserParam(params); // attach logged-in user to every request
       var write = !CACHE_ACTIONS[params.action];
       if (write) cacheClear(); // new data going to the sheet -> drop stale cache
       var read = CACHE_ACTIONS[params.action];
@@ -110,13 +97,6 @@ var API = (function () {
     setUrl: setUrl,
     isConfigured: isConfigured,
     refresh: function () { cacheClear(); },
-    getSessionUser: function () { return currentUser; },
-    setSessionUser: function (u) {
-      currentUser = u || null;
-      try { if (u && u.id) localStorage.setItem(USER_KEY, u.id); else localStorage.removeItem(USER_KEY); } catch (e) {}
-    },
-    users: function () { return call({ action: "users" }); },
-    login: function (userId) { return call({ action: "login", user: userId }); },
     dashboard: function () { return call({ action: "dashboard" }); },
     roles: function () { return call({ action: "roles" }); },
     roleApplicants: function (role) { return call({ action: "roleapplicants", role: role }); },
@@ -135,6 +115,28 @@ var API = (function () {
     },
     deleteCandidate: function (id) {
       return call({ action: "deletecandidate", id: id });
+    },
+    calendar: function () { return call({ action: "calendar" }); },
+    calendarCreate: function (f) {
+      var p = { action: "calendarcreate", candidate: f.candidate, role: f.role, date: f.date, time: f.time };
+      if (f.duration) p.duration = f.duration;
+      if (f.interviewer) p.interviewer = f.interviewer;
+      if (f.interviewerEmail) p.interviewerEmail = f.interviewerEmail;
+      if (f.notes) p.notes = f.notes;
+      return call(p);
+    },
+    calendarUpdate: function (id, f) {
+      var p = { action: "calendarupdate", id: id };
+      if (f.date) p.date = f.date;
+      if (f.time) p.time = f.time;
+      if (f.duration) p.duration = f.duration;
+      if (f.interviewer) p.interviewer = f.interviewer;
+      if (f.interviewerEmail) p.interviewerEmail = f.interviewerEmail;
+      if (f.notes) p.notes = f.notes;
+      return call(p);
+    },
+    calendarCancel: function (id) {
+      return call({ action: "calendarcancel", id: id });
     }
   };
 })();

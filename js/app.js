@@ -8,14 +8,13 @@
 
   var state = {
     dashboard: null,     // { stats, roles, upcomingInterviews, interviews }
+    calendar: null,      // { events, upcoming, past } from the Interviews/calendar source
     allApplicants: [],   // global aggregated applicants
     currentView: "dashboard",
     currentRole: null,   // { title, status, department, ... }
     currentCandidate: null,
     currentIvSeg: "upcoming",
-    filters: { search: "", role: "", dept: "", status: "", priority: "" },
-    user: null,          // logged-in safe user { id, name, role, access, reviewField, ... }
-    loginReady: false
+    filters: { search: "", role: "", dept: "", status: "", priority: "" }
   };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -106,12 +105,12 @@
   function applyConfigUI() {
     var ok = API.isConfigured();
     $("config-banner").classList.toggle("hidden", ok);
-    if (ok) ensureLoggedIn();
+    if (ok) loadDashboard();
     else hideLoading(); // nothing to load yet -> show the connect banner
   }
 
   function openConfigModal() { $("config-input").value = API.getUrl(); $("config-modal").classList.remove("hidden"); }
-  function closeModals() { $("config-modal").classList.add("hidden"); $("edit-modal").classList.add("hidden"); $("add-modal").classList.add("hidden"); $("login-modal").classList.add("hidden"); }
+  function closeModals() { $("config-modal").classList.add("hidden"); $("edit-modal").classList.add("hidden"); $("add-modal").classList.add("hidden"); $("calendar-modal").classList.add("hidden"); }
 
   /* ---------------- view switching ---------------- */
 
@@ -434,7 +433,7 @@
 
     $("cand-sections").innerHTML = sections.join("");
 
-    var allowed = editableSchemas();
+    var allowed = ["status", "priority", "time", "ctc", "reviews", "contact"];
     var buttons = [];
     allowed.forEach(function (w) {
       var label = w === "status" ? "Edit Status" :
@@ -444,7 +443,7 @@
         w === "contact" ? "Edit Contact" : "Edit Reviews";
       buttons.push('<button class="btn" data-edit="' + w + '">' + label + '</button>');
     });
-    if (canDelete()) buttons.push('<button class="btn btn-danger" id="cand-delete-btn">Delete Candidate</button>');
+    buttons.push('<button class="btn btn-danger" id="cand-delete-btn">Delete Candidate</button>');
     $("cand-actions").innerHTML = buttons.join("");
     $("cand-actions").querySelectorAll("button[data-edit]").forEach(function (btn) {
       btn.addEventListener("click", function () { openEdit(btn.dataset.edit); });
@@ -483,35 +482,173 @@
     renderInterviewsPage();
   }
 
+  // Scheduled interviews come from the Google Calendar-backed Interviews source.
+  function loadInterviews() {
+    API.calendar().then(function (data) {
+      state.calendar = data;
+      if (state.currentView === "interviews") renderInterviewsPage();
+    }).catch(showError);
+  }
+
   function renderInterviewsPage() {
-    var iv = (state.dashboard && state.dashboard.interviews) || {};
-    var list = (state.currentIvSeg === "pending") ? (iv.pending || []) :
-               (state.currentIvSeg === "completed") ? (iv.completed || []) : (iv.upcoming || []);
     var el = $("interviews-body");
-    if (!list.length) { el.innerHTML = '<div class="empty">Nothing here.</div>'; return; }
+    if (!state.calendar) { inlineLoading(el, "Loading interviews…"); loadInterviews(); return; }
+
+    var cal = state.calendar;
+    var seg = state.currentIvSeg;
+    var list, emptyMsg;
+    if (seg === "pending") {
+      list = (state.dashboard && state.dashboard.interviews && state.dashboard.interviews.pending) || [];
+      emptyMsg = "No candidates awaiting scheduling.";
+    } else if (seg === "completed") {
+      list = cal.past || [];
+      emptyMsg = "No completed interviews yet.";
+    } else {
+      list = cal.upcoming || cal.events || [];
+      emptyMsg = "No upcoming interviews scheduled yet.";
+    }
+
+    if (!list.length) { el.innerHTML = '<div class="empty">' + esc(emptyMsg) + '</div>'; return; }
 
     var rows = list.map(function (i) {
-      var badge = state.currentIvSeg === "pending"
-        ? '<span class="badge badge-amber">Scheduling pending</span>'
-        : state.currentIvSeg === "completed"
-          ? '<span class="badge badge-green">Completed</span>'
-          : '<span class="badge badge-blue">Scheduled</span>';
-      return '<tr data-id="' + esc(i.id) + '"><td class="cell-primary">' + esc(i.candidate) + '</td>' +
-        '<td>' + esc(i.role) + '</td>' +
+      var canEdit = !!i.eventId;
+      var statusBadgeCls = "badge-blue", statusLabel = "Scheduled";
+      if (seg === "completed") { statusBadgeCls = "badge-green"; statusLabel = "Completed"; }
+      if (seg === "pending") { statusBadgeCls = "badge-amber"; statusLabel = "Scheduling pending"; }
+
+      var meet = "";
+      if (i.meet) {
+        meet = '<a href="' + esc(i.meet) + '" target="_blank" rel="noopener" class="meet-link" title="Open Google Meet">Meet</a>';
+      }
+
+      var action;
+      if (i.eventId) {
+        action = canEdit
+          ? '<button class="btn btn-sm btn-ghost" data-edit-evt="' + esc(i.eventId) + '">Edit</button>'
+          : '<span class="cell-sub">View</span>';
+      } else if (seg === "pending") {
+        action = '<button class="btn btn-sm btn-ghost" data-create-evt="' + esc(i.id || "") + '">Schedule</button>';
+      } else {
+        action = "";
+      }
+
+      return '<tr data-id="' + esc(i.id || "") + '">' +
+        '<td class="cell-primary">' + esc(i.candidate) + '</td>' +
+        '<td>' + esc(i.role || i.roleTitle || "—") + '</td>' +
         '<td>' + esc(fmtDate(i.date)) + '</td>' +
         '<td>' + esc(fmtTime(i.time)) + '</td>' +
-        '<td>' + esc(i.date ? i.date + (i.time ? " " + i.time : "") : "") + '</td>' +
         '<td>' + esc(i.interviewer || "—") + '</td>' +
-        '<td>' + badge + '</td></tr>';
+        '<td>' + meet + '</td>' +
+        '<td><span class="badge ' + statusBadgeCls + '">' + esc(statusLabel) + '</span></td>' +
+        '<td>' + action + '</td>' +
+      '</tr>';
     }).join("");
 
     el.innerHTML = '<table class="table"><thead><tr>' +
-      '<th>Candidate</th><th>Role</th><th>Date</th><th>Time</th><th>Schedule info</th><th>Interviewer</th><th>Status</th>' +
+      '<th>Candidate</th><th>Role</th><th>Date</th><th>Time</th><th>Interviewer</th><th>Meet</th><th>Status</th><th></th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table>';
 
     el.querySelectorAll("tbody tr").forEach(function (tr) {
-      tr.addEventListener("click", function () { openCandidate(tr.dataset.id); });
+      tr.addEventListener("click", function (e) {
+        if (e.target.closest && e.target.closest("button")) return; // let action buttons handle it
+        var evtId = tr.querySelector("[data-edit-evt]");
+        if (evtId) { openCalendarModal(evtId.dataset.editEvt); return; }
+        var create = tr.querySelector("[data-create-evt]");
+        if (create) openCalendarModal(null, create.dataset.createEvt);
+      });
     });
+    el.querySelectorAll("[data-edit-evt]").forEach(function (b) {
+      b.addEventListener("click", function (e) { e.stopPropagation(); openCalendarModal(b.dataset.editEvt); });
+    });
+    el.querySelectorAll("[data-create-evt]").forEach(function (b) {
+      b.addEventListener("click", function (e) { e.stopPropagation(); openCalendarModal(null, b.dataset.createEvt); });
+    });
+  }
+
+  /* ---------------- calendar scheduling modal ---------------- */
+
+  var calEditingId = null; // null = create mode, else an Interview tab row id (eventId)
+
+  function findCalEvent(id) {
+    var all = ((state.calendar && state.calendar.events) || []);
+    for (var i = 0; i < all.length; i++) if (all[i].eventId === id) return all[i];
+    return null;
+  }
+
+  function calendarSubmit() {
+    var candidate = $("cal-candidate").value.trim();
+    var role = $("cal-role").value;
+    var date = $("cal-date").value;
+    var time = $("cal-time").value;
+    if (!candidate) { toast("Please enter the candidate name"); return; }
+    if (!role) { toast("Please select a role"); return; }
+    if (!date || !time) { toast("Please set the date and time"); return; }
+
+    var fields = {
+      candidate: candidate, role: role, date: date, time: time,
+      duration: $("cal-duration").value,
+      interviewer: $("cal-interviewer").value.trim(),
+      interviewerEmail: $("cal-interviewer-email").value.trim(),
+      notes: $("cal-notes").value.trim()
+    };
+    if (calEditingId) {
+      API.calendarUpdate(calEditingId, fields).then(function () {
+        closeModals(); toast("Interview updated on Google Calendar");
+        API.refresh(); loadDashboard(); loadInterviews();
+      }).catch(showError);
+    } else {
+      API.calendarCreate(fields).then(function () {
+        closeModals(); toast("Interview scheduled on Google Calendar");
+        API.refresh(); loadDashboard(); loadInterviews();
+        if (state.currentView === "interviews") goInterviews("upcoming");
+      }).catch(showError);
+    }
+  }
+
+  function openCalendarModal(id, pendingId) {
+    // populate role select
+    var roles = (state.dashboard && state.dashboard.roles) || [];
+    var sel = $("cal-role");
+    sel.innerHTML = '<option value="">Select role…</option>' + roles.map(function (r) {
+      return '<option value="' + esc(r.title) + '">' + esc(r.title) + '</option>';
+    }).join("");
+
+    $("cal-title").textContent = id ? "Edit Interview" : "Schedule Interview";
+    $("cal-cancel").classList.toggle("hidden", !id);
+    calEditingId = id || null;
+
+    var ev = id ? findCalEvent(id) : null;
+    var candidate = "", role = "", date = "", time = "", duration = "60", interviewer = "", email = "", meet = "", notes = "";
+    if (ev) { candidate = ev.candidate; role = ev.role || ""; date = ev.date || ""; time = ev.time || ""; duration = ev.duration || "60"; interviewer = ev.interviewer || ""; email = ev.interviewerEmail || ""; meet = ev.meet || ""; notes = ev.notes || ""; }
+
+    if (pendingId) {
+      var cand = (state.allApplicants || []).filter(function (a) { return a.id === pendingId; })[0];
+      if (cand) { candidate = cand.name; role = cand.roleTitle || ""; }
+    }
+
+    $("cal-candidate").value = candidate;
+    $("cal-candidate").readOnly = !!ev;
+    if (role) sel.value = role;
+    $("cal-date").value = date;
+    $("cal-time").value = time;
+    $("cal-duration").value = duration;
+    $("cal-interviewer").value = interviewer;
+    $("cal-interviewer-email").value = email;
+    $("cal-meet").value = meet;
+    $("cal-meet").readOnly = !!ev;
+    $("cal-notes").value = notes;
+
+    $("calendar-modal").classList.remove("hidden");
+  }
+
+  function cancelInterview() {
+    if (!calEditingId) return;
+    var ev = findCalEvent(calEditingId) || {};
+    if (!window.confirm('Cancel the interview with "' + (ev.candidate || "this candidate") + '"? This removes it from Google Calendar.')) return;
+    API.calendarCancel(calEditingId).then(function () {
+      closeModals(); toast("Interview cancelled");
+      API.refresh(); loadDashboard(); loadInterviews();
+    }).catch(showError);
   }
 
   /* ---------------- editing / sync ---------------- */
@@ -569,16 +706,13 @@
   var editState = null;
 
   function openEdit(which) {
-    var allowed = editableSchemas();
-    if (allowed.indexOf(which) === -1) {
-      toast(isHR() ? "That edit is not available here." : "You can only edit your assigned review field.");
-      return;
-    }
+    var allowed = ["status", "priority", "time", "ctc", "reviews", "contact"];
+    if (allowed.indexOf(which) === -1) return;
     var schema = EDIT_SCHEMAS[which];
     if (!schema || !state.currentCandidate) return;
     var c = state.currentCandidate;
     var fields = schema.fields.filter(function (f) {
-      return editableReviewKeys().indexOf(f.key) !== -1;
+      return true;
     });
     if (!fields.length) { toast("You have no editable fields here."); return; }
     editState = { used: fields.map(function (f) { return f.key; }) };
@@ -688,11 +822,15 @@
   $("edit-close").addEventListener("click", closeModals);
   $("edit-cancel").addEventListener("click", closeModals);
 
+  $("schedule-btn").addEventListener("click", function () { openCalendarModal(null); });
+  $("cal-close").addEventListener("click", closeModals);
+  $("cal-close-btn").addEventListener("click", closeModals);
+  $("cal-cancel").addEventListener("click", cancelInterview);
+  $("cal-form").addEventListener("submit", function (e) { e.preventDefault(); calendarSubmit(); });
+
   /* ---------------- add candidate ---------------- */
 
   function openAddModal() {
-    if (!state.user) { toast("Sign in first"); openLoginModal(); return; }
-    if (!isHR()) { toast("Only HR can add candidates."); return; }
     var roles = (state.dashboard && state.dashboard.roles) || [];
     var sel = $("add-role");
     sel.innerHTML = '<option value="">Select role…</option>' + roles.map(function (r) {
@@ -751,123 +889,6 @@
   document.addEventListener("click", function (e) {
     if (e.target.classList && e.target.classList.contains("modal")) closeModals();
   });
-
-  /* ---------------- auth / login ---------------- */
-
-  function isHR() { return !!(state.user && state.user.access === "all"); }
-  function canDelete() { return isHR(); }
-  function isReviewer() { return !!(state.user && state.user.reviewField); }
-
-  // which review fields this user may edit (HR = all 5, reviewer = own 1)
-  function editableReviewKeys() {
-    if (isHR()) return ["reviewAnisha", "review1", "review2", "review3", "review4"];
-    if (state.user && state.user.reviewField) return [state.user.reviewField];
-    return [];
-  }
-  // which of the standard edit schemas this user may open (HR = all, else only their review)
-  function editableSchemas() {
-    if (isHR()) return ["status", "priority", "time", "ctc", "reviews", "contact"];
-    if (state.user && state.user.reviewField) return ["reviews"];
-    return [];
-  }
-
-  function setUser(u) {
-    state.user = u;
-    $("user-chip-label").textContent = u ? (u.name || u.id || "Signed in") : "Sign in";
-    $("user-chip").title = u ? ("Signed in as " + (u.name || u.id) + (isHR() ? " (HR)" : "")) : "Sign in to edit";
-    API.setSessionUser(u);
-    applyAccessControls();
-  }
-
-  function applyAccessControls() {
-    var canAdd = isHR();
-    ["add-candidate-btn", "add-candidate-btn-2"].forEach(function (id) {
-      var b = $(id); if (b) b.style.display = canAdd ? "" : "none";
-    });
-    // update current candidate actions if open
-    if (state.currentCandidate && state.currentView === "candidate") renderCandidate(state.currentCandidate);
-  }
-
-  function openLoginModal() {
-    hideLoading();
-    $("login-msg").textContent = "Select your name and press Continue.";
-    $("login-modal").classList.remove("hidden");
-    loadLoginUsers();
-  }
-  function closeLoginModal() { $("login-modal").classList.add("hidden"); }
-
-  function loadLoginUsers() {
-    API.users().then(function (data) {
-      var users = data.users || [];
-      var sel = $("login-list");
-      if (!users.length) { sel.innerHTML = '<option value="">No users found in the Users tab</option>'; $("login-msg").textContent = "Add a Users tab (User ID | Name | Role | Access) to enable named sign-in."; return; }
-      sel.innerHTML = '<option value="">Select…</option>' + users.map(function (u) {
-        return '<option value="' + esc(u.id) + '">' + esc(u.name) + ' (' + esc(u.id) + ')</option>';
-      }).join("");
-      state.loginReady = true;
-    }).catch(function (err) {
-      // stale / not-yet-deployed backend without the users endpoint ->
-      // keep it usable with a temporary full-access session.
-      var sel = $("login-list");
-      sel.innerHTML = '<option value="">Users not available</option>';
-      $("login-msg").textContent = "Could not load users (" + (err && err.message ? err.message : "error") + "). Use \u201cFull access (temporary)\u201d to continue, then re-deploy Code.gs to enable per-user permissions.";
-    });
-  }
-
-  function completeLogin(id) {
-    if (!id) { toast("Select a user first"); return; }
-    API.login(id).then(function (data) {
-      if (data && data.user) {
-        setUser(data.user);
-        closeLoginModal();
-        toast("Signed in as " + (data.user.name || data.user.id));
-        loadDashboard(); // re-fetch filtered by this user
-        API.refresh();
-      } else {
-        $("login-msg").textContent = "Sign-in failed for that name. Pick another or use Full access.";
-      }
-    }).catch(function (err) {
-      // stale backend -> fall back to full access so the tool stays usable
-      $("login-msg").textContent = "Sign-in failed (" + (err && err.message ? err.message : "error") + "). Continuing with full access.";
-      setUser({ id: "full", name: "Full Access", role: "HR", access: "all" });
-      closeLoginModal();
-    });
-  }
-
-  function ensureLoggedIn() {
-    // restore a saved session if present
-    var u = API.getSessionUser();
-    if (u) { setUser(u); loadDashboard(); return; }
-    var savedId = "";
-    try { savedId = localStorage.getItem("hiring_user") || ""; } catch (e) {}
-    if (savedId) {
-      API.login(savedId).then(function (data) {
-        if (data && data.user) { setUser(data.user); loadDashboard(); }
-        else openLoginModal();
-      }).catch(function () { openLoginModal(); });
-      return;
-    }
-    openLoginModal();
-  }
-
-  $("user-chip").addEventListener("click", function () {
-    if (state.user) {
-      setUser(null);
-      toast("Signed out");
-      API.refresh();
-      loadDashboard();
-    }
-    openLoginModal();
-  });
-  $("login-btn").addEventListener("click", function () { completeLogin($("login-list").value); });
-  $("login-full").addEventListener("click", function () {
-    setUser({ id: "full", name: "Full Access", role: "HR", access: "all" });
-    closeLoginModal();
-    toast("Signed in with full access");
-    API.refresh();
-    loadDashboard();
-  });
-  $("login-msg").addEventListener("click", function () { /* noop */ });
 
   /* ---------------- auto refresh ---------------- */
 

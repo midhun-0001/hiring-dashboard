@@ -9,23 +9,20 @@
   <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&display=swap" rel="stylesheet" />
   <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABwAAAAcCAMAAABF0y+mAAAAt1BMVEUeHh4AAABJNBR9WSKUaSiYbCnioD3rpj/Okje6gzFuTh5eQxgvIAtlRxpOOBVWPRhhSSI0JhBFNBmLYyZZPxjZmjpdTC0YEwtsWDMiGAgpHQo/LA8lGglsXj9gVDhbTTJQPR6ikWZTSTI1LyCSg1x1UyDIjjZmVDIhHRNMQiyMdk1kVzwOCgMsJxw7MSBWRSlKPCRCMx2Ab0hqTiE5MiJ7bk2tlWU6KQ5uY0eVgFSMe1aCbECTdkIh4MFYAAABRUlEQVR4AYzSA4IkMQBA0fll2zNtb9u8/7UWlR2zEL04ubvj0+crgx+jJCuKLH2IqqYbpmnomvoOLd20AQdcU3efUTTzAGwLwNeUl6gYABCEEQBG/IxJimSHkOUUUNo2qfeEacX9Q1Q0GtBsFW1snPQRZRUIgE6312+CE4E6QOAQYATjSesXUyiA2VDgzASYzFkslisaYxoApkBbBtaNTmtVROVo1O1vMiD2a5R9nO2K7i5bwTrr7am2HsmgxjgsY4DDbAZjOnPAtY+yaBkys9tM6WawanCi7YYcrRp9H8iz8+m0b/Ual9PmWgGJVCMDgOWM+eQ05QQBwOM6LYAEZq1GhyYkAJZAklxgfltwDSD36l8gPiQPfhL54Fe2nbsg8YhViefOQCpxgcSlLJ+QGQDg3h8RBR/cvkT+6mo6f0Z8usWbHQBt1hrlwa0P8QAAAABJRU5ErkJggg==" />
   <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@lottiefiles/dotlottie-player@2.3.1/dist/dotlottie-player.js"></script>
 </head>
 <body>
   <!-- Full-page loading overlay: shown until the first dashboard data loads -->
   <div id="loading-overlay" class="loading-overlay" aria-hidden="true">
-    <div class="leo-loader">
-      <div class="leo-ring">
-        <span class="leo-core"></span>
-        <span class="sat s0"></span>
-        <span class="sat s1"></span>
-        <span class="sat s2"></span>
-        <span class="sat s3"></span>
-        <span class="sat s4"></span>
-        <span class="sat s5"></span>
-        <span class="sat s6"></span>
-        <span class="sat s7"></span>
-      </div>
-      <a class="leo-link" href="https://docs.google.com/spreadsheets/d/1w0DLQ2Pd9zEfRNyK0SYVKQ6hePTxrh7x3ITjy6dPscA/edit?gid=0#gid=0" target="_blank" rel="noopener">Open source sheet</a>
+    <div class="lottie-loader">
+      <dotlottie-player
+        id="satellite-lottie"
+        src="https://assets-v2.lottiefiles.com/a/9268a146-118a-11ee-91cd-dfd0c21a3357/K3BhHMPCVO.lottie"
+        autoplay
+        loop
+        renderer="svg"
+        style="width:240px;height:240px"
+      ></dotlottie-player>
       <div class="leo-title">building LEO PNT</div>
       <div class="leo-sub">Low Earth Orbit · Positioning · Navigation · Timing</div>
     </div>
@@ -46,10 +43,10 @@
 
       <div class="topbar-actions">
         <span id="last-updated" class="last-updated" title="Last refreshed"></span>
-        <button id="user-chip" class="btn btn-ghost btn-user" title="Signed in as / switch user">
-          <svg viewBox="0 0 24 24" class="icon" aria-hidden="true" style="width:15px;height:15px"><path fill="currentColor" d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-          <span id="user-chip-label">Sign in</span>
-        </button>
+        <a id="sheet-btn" class="btn btn-ghost" href="https://docs.google.com/spreadsheets/d/1w0DLQ2Pd9zEfRNyK0SYVKQ6hePTxrh7x3ITjy6dPscA/edit?gid=0#gid=0" target="_blank" rel="noopener" title="Open the source Google Sheet">
+          <svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path fill="currentColor" d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7l-6-4zm4 16H6V5h7v4h5v10zM8 13h8v2H8v-2zm0 4h8v2H8v-2zm0-8h5v2H8V9z"/></svg>
+          <span>Sheet</span>
+        </a>
         <button id="theme-toggle" class="btn btn-ghost" title="Toggle dark mode" aria-label="Toggle dark mode">
           <svg id="icon-sun" viewBox="0 0 24 24" class="icon icon-sun" aria-hidden="true"><path fill="currentColor" d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.79 1.42-1.41zM4 10.5H1v2h3v-2zm9-9.95h-2V3.5h2V.55zm7.45 3.91l-1.41-1.41-1.79 1.79 1.41 1.41 1.79-1.79zm-3.21 13.7l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM20 10.5v2h3v-2h-3zm-8-5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8.7 19.2l-1.8 1.79 1.41 1.41 1.79-1.8-1.4-1.4z"/></svg>
           <svg id="icon-moon" viewBox="0 0 24 24" class="icon icon-moon" aria-hidden="true"><path fill="currentColor" d="M12.1 22a10 10 0 0 1 0-20 8.5 8.5 0 1 0 11.4 11.4A10 10 0 0 1 12.1 22z" transform="translate(-2)"/></svg>
@@ -192,6 +189,12 @@
             <button class="seg-btn" data-iv="pending">Pending Scheduling</button>
             <button class="seg-btn" data-iv="completed">Completed</button>
           </div>
+          <div class="panel-tools">
+            <button id="schedule-btn" class="btn btn-primary btn-sm">
+              <svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path fill="currentColor" d="M19 3h-1V1h-2v2H8V1H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 16H5V8h14v11zM7 10h3v3H7v-3zm4 0h3v3h-3v-3zm4 0h2v3h-2v-3z"/></svg>
+              <span>Schedule Interview</span>
+            </button>
+          </div>
         </div>
         <div id="interviews-body" class="table-wrap"></div>
       </section>
@@ -218,25 +221,6 @@
   </main>
 
   <div id="toast" class="toast hidden"></div>
-
-  <!-- login modal -->
-  <div id="login-modal" class="modal hidden">
-    <div class="modal-card">
-      <div class="modal-head">
-        <h3>Sign in</h3>
-      </div>
-      <div class="login-body">
-        <label class="field"><span>Who are you?</span>
-          <select id="login-list" class="input"><option value="">Loading users…</option></select>
-        </label>
-        <p id="login-msg" class="muted" style="font-size:12px"></p>
-      </div>
-      <div class="modal-actions">
-        <button type="button" id="login-full" class="btn btn-ghost">Full access (temporary)</button>
-        <button type="button" id="login-btn" class="btn btn-primary">Continue</button>
-      </div>
-    </div>
-  </div>
 
   <!-- editing modal -->
   <div id="edit-modal" class="modal hidden">
@@ -281,6 +265,36 @@
         <div class="modal-actions">
           <button type="button" id="add-cancel" class="btn btn-ghost">Cancel</button>
           <button type="submit" class="btn btn-primary">Add to Sheet</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- calendar / interview scheduling modal -->
+  <div id="calendar-modal" class="modal hidden">
+    <div class="modal-card modal-wide">
+      <div class="modal-head">
+        <h3 id="cal-title">Schedule Interview</h3>
+        <button id="cal-close" class="btn btn-ghost btn-sm">&times;</button>
+      </div>
+      <form id="cal-form">
+        <div class="add-grid">
+          <label class="field"><span>Candidate *</span><input id="cal-candidate" class="input" type="text" required /></label>
+          <label class="field"><span>Role *</span>
+            <select id="cal-role" class="input"><option value="">Select role…</option></select>
+          </label>
+          <label class="field"><span>Date *</span><input id="cal-date" class="input" type="date" required /></label>
+          <label class="field"><span>Time *</span><input id="cal-time" class="input" type="time" required /></label>
+          <label class="field"><span>Duration (min)</span><input id="cal-duration" class="input" type="number" min="5" step="5" value="60" /></label>
+          <label class="field"><span>Interviewer name</span><input id="cal-interviewer" class="input" type="text" /></label>
+          <label class="field"><span>Interviewer email</span><input id="cal-interviewer-email" class="input" type="email" /></label>
+          <label class="field"><span>Meet link</span><input id="cal-meet" class="input" type="text" placeholder="auto from Google Meet, or paste" /></label>
+        </div>
+        <label class="field"><span>Notes</span><textarea id="cal-notes" class="input" rows="2"></textarea></label>
+        <div class="modal-actions">
+          <button type="button" id="cal-cancel" class="btn btn-danger">Cancel Interview</button>
+          <button type="button" id="cal-close-btn" class="btn btn-ghost">Close</button>
+          <button type="submit" class="btn btn-primary">Save to Calendar</button>
         </div>
       </form>
     </div>
