@@ -38,11 +38,21 @@
 
 var SETTINGS = {
   ROLES_TAB_NAME: "Roles",
+  USERS_TAB_NAME: "Users",
   ROLES_COLS: { id:0, title:1, department:2, status:3, approvalStage:4, interviewKit:5 },
   APP_COLS: {
     applicantId:0, name:1, email:2, phone:3, position:4, resume:5,
     experience:6, ctc:7, priority:8, status:9, time:10,
     reviewAnisha:11, review1:12, review2:13, review3:14, review4:15
+  },
+  USERS_COLS: { id:0, name:1, role:2, access:3, assignedRoles:4, reviewColumn:5 },
+  // Label in the Users sheet's "Review Column" -> applicant review field key.
+  REVIEW_FIELD_MAP: {
+    "anisha": "reviewAnisha",
+    "interviewer 1": "review1",
+    "interviewer 2": "review2",
+    "interviewer 3": "review3",
+    "interviewer 4": "review4"
   }
 };
 
@@ -72,7 +82,100 @@ function text_(v) { return { value: String(v === undefined || v === null ? "" : 
 
 function roleTabs_() {
   var all = ss_().getSheets();
-  return all.filter(function (sh) { return sh.getName() !== SETTINGS.ROLES_TAB_NAME; });
+  return all.filter(function (sh) {
+    var n = sh.getName();
+    return n !== SETTINGS.ROLES_TAB_NAME && n !== SETTINGS.USERS_TAB_NAME;
+  });
+}
+
+/* ============================================================
+ * Users + access control (source of truth = the "Users" tab)
+ * ============================================================
+ * Columns:
+ *   A User ID | B Name | C Role | D Access (All / Assigned)
+ *   E Assigned Roles (comma/line separated role titles) | F Review Column
+ *
+ * Access: "All" -> HR sees/edits/deletes/adds everything.
+ * Access: "Assigned" -> sees only the roles in E; can only edit their own
+ * review field (F) on candidates within those roles; cannot add/delete.
+ * ============================================================ */
+
+function readUsers_() {
+  var sh = ss_().getSheetByName(SETTINGS.USERS_TAB_NAME);
+  var out = [];
+  if (!sh) return out;
+  var lastRow = sh.getLastRow();
+  if (lastRow < 1) return out;
+  var lastCol = Math.min(sh.getLastColumn(), 6);
+  var data = sh.getRange(1, 1, lastRow, lastCol).getValues();
+  var C = SETTINGS.USERS_COLS;
+  for (var i = 1; i < data.length; i++) {
+    var r = data[i];
+    var id = norm_(r[C.id]);
+    var name = norm_(r[C.name]);
+    if (!id && !name) continue;
+    var assigned = String(r[C.assignedRoles] || "")
+      .split(/[,\n;]+/)
+      .map(function (s) { return s.trim(); })
+      .filter(Boolean);
+    out.push({
+      id: id,
+      name: name,
+      display: id || name,
+      role: norm_(r[C.role]),
+      access: norm_(r[C.access]).toLowerCase(),        // "all" | "assigned"
+      assignedRoles: assigned,
+      assignedNorm: assigned.map(normTitle_),
+      reviewColumn: norm_(r[C.reviewColumn]),
+      reviewField: reviewFieldFor_(norm_(r[C.reviewColumn]))
+    });
+  }
+  return out;
+}
+
+function reviewFieldFor_(label) {
+  var key = norm_(label).toLowerCase();
+  return SETTINGS.REVIEW_FIELD_MAP[key] || null;
+}
+
+// Find a user by User ID or by Name (case-insensitive).
+function findUser_(user) {
+  if (!user) return null;
+  var u = norm_(user).toLowerCase();
+  var list = readUsers_();
+  for (var i = 0; i < list.length; i++) {
+    if (norm_(list[i].id).toLowerCase() === u) return list[i];
+    if (norm_(list[i].name).toLowerCase() === u) return list[i];
+  }
+  return null;
+}
+
+function isHR_(user) { return user && user.access === "all"; }
+
+function userSeesRole_(user, roleTitle) {
+  if (!user) return false;
+  if (isHR_(user)) return true;
+  var t = normTitle_(roleTitle);
+  return user.assignedNorm.indexOf(t) !== -1;
+}
+
+// Does the user have permission to edit the given field (key) of an applicant?
+function userCanEdit_(user, field) {
+  if (!user) return false;
+  if (isHR_(user)) return true;
+  // Interviewers may only edit the review field assigned to them.
+  return !!(user.reviewField && user.reviewField === canonField_(field));
+}
+
+// Resolve any case/format variant of a field name to its canonical APP key
+// (e.g. "reViEwAnIsHa" or "reviewanisa" -> "reviewAnisha"). Returns "" if none.
+function canonField_(field) {
+  var f = String(field || "").trim().toLowerCase();
+  var keys = Object.keys(SETTINGS.APP_COLS);
+  for (var i = 0; i < keys.length; i++) {
+    if (String(keys[i]).toLowerCase() === f) return keys[i];
+  }
+  return "";
 }
 
 /* ============================================================
@@ -237,10 +340,22 @@ function allTabs_(roles) {
   return result;
 }
 
+// Only the tabs that correspond to a role in `roles` (by normalized name/ID).
+// Used so a non-HR user (whose `roles` list is already filtered) never reads
+// tabs belonging to roles they were not assigned.
+function tabsForRoles_(roles) {
+  return allTabs_(roles).filter(function (t) {
+    return roles.some(function (r) {
+      return normTitle_(r.title) === normTitle_(t.tab) ||
+             (r.id && norm_(r.id).toLowerCase() === norm_(t.tab).toLowerCase());
+    });
+  });
+}
+
 // Attach applicantCount to each role from its matching tab (count *all* rows
 // with at least a name), even if the tab isn't in the Roles tab list.
 function withCounts_(roles) {
-  var tabs = allTabs_(roles);
+  var tabs = tabsForRoles_(roles);
   var counts = {};
   var tabTitles = {};
   tabs.forEach(function (t) { counts[t.tab] = readTab_(t.tab).length; tabTitles[t.tab] = t.title; });
@@ -256,8 +371,13 @@ function withCounts_(roles) {
   return roles;
 }
 
-function buildDashboard_() {
-  var roles = withCounts_(readRoles_());
+function visibleRoles_(roles, user) {
+  if (!user || isHR_(user)) return roles;
+  return roles.filter(function (r) { return userSeesRole_(user, r.title); });
+}
+
+function buildDashboard_(user) {
+  var roles = withCounts_(visibleRoles_(readRoles_(), user));
   var openRoles = 0, closedRoles = 0;
   roles.forEach(function (r) {
     if (r.status === "open") openRoles++; else closedRoles++;
@@ -335,7 +455,7 @@ function firstReview_(a) {
 
 function allApplicants_(roles) {
   var all = [];
-  allTabs_(roles).forEach(function (t) {
+  tabsForRoles_(roles).forEach(function (t) {
     readTab_(t.tab).forEach(function (a) {
       // roleTitle = the CLEAN role title (from the Roles tab mapping).
       // If a tab isn't in the Roles master list, fall back to the tab name.
@@ -380,18 +500,30 @@ function doGet(e) {
   try {
     var p = (e && e.parameter) || {};
     var action = p.action || "dashboard";
+    var user = findUser_(p.user);
 
-    if (action === "dashboard") {
-      return json_(buildDashboard_());
+    if (action === "users") {
+      // Public list of login options (id + name only - no permissions leaked).
+      return json_({ users: readUsers_().map(function (u) {
+        return { id: u.id, name: u.name };
+      }) });
+
+    } else if (action === "login") {
+      if (!user) throw new Error("User not found");
+      return json_({ user: safeUser_(user) });
+
+    } else if (action === "dashboard") {
+      return json_(buildDashboard_(user));
 
     } else if (action === "roles") {
-      return json_(withCounts_(readRoles_()));
+      return json_(withCounts_(visibleRoles_(readRoles_(), user)));
 
     } else if (action === "applicants") {
-      return json_({ applicants: allApplicants_(readRoles_()) });
+      return json_({ applicants: allApplicants_(visibleRoles_(readRoles_(), user)) });
 
     } else if (action === "roleapplicants") {
       var role = p.role || p.title || "";
+      if (!userSeesRole_(user, role)) return json_({ role: role, applicants: [], denied: true });
       var tab = tabForRole_(role);
       if (!tab) return json_({ role: role, applicants: [] });
       return json_({ role: role, tab: tab, applicants: readTab_(tab) });
@@ -403,10 +535,11 @@ function doGet(e) {
       if (!loc) throw new Error("candidate not found: " + id);
       var hit = readTab_(loc.tab).filter(function (a) { return a.row === loc.row; })[0];
       if (!hit) throw new Error("candidate not found");
+      if (!userSeesRole_(user, hit.roleTitle)) throw new Error("not authorized to view this candidate");
       return json_(hit);
 
     } else if (action === "interviews") {
-      return json_(buildDashboard_().interviews);
+      return json_(buildDashboard_(user).interviews);
 
     } else if (action === "update") {
       var uid = p.id || "";
@@ -415,7 +548,12 @@ function doGet(e) {
       var utab = p.tab || "";
       var loc = utab ? findInTab_(utab, uid) : locateApplicant_(uid);
       if (!loc) throw new Error("applicant not found: " + uid);
-      var letter = FIELD_MAP[String(field).toLowerCase()] || (String(field).length === 1 ? String(field).toUpperCase() : "");
+      var rowOf = readTab_(loc.tab).filter(function (a) { return a.row === loc.row; })[0];
+      if (!rowOf) throw new Error("applicant not found");
+      if (!userSeesRole_(user, rowOf.roleTitle)) throw new Error("not authorized to edit this candidate");
+      var cfield = canonField_(field) || field; // canonical APP key, or fall back to raw
+      if (!userCanEdit_(user, cfield)) throw new Error("not authorized to edit field: " + field);
+      var letter = FIELD_MAP[cfield] || (String(cfield).length === 1 ? String(cfield).toUpperCase() : "");
       if (!letter) throw new Error("unknown field: " + field);
       var sh = ss_().getSheetByName(loc.tab);
       var row = sh.getRange(loc.row, 1, 1, sh.getLastColumn()).getValues()[0];
@@ -424,6 +562,7 @@ function doGet(e) {
       return json_({ ok: true, tab: loc.tab, row: loc.row, field: field, value: String(val) });
 
     } else if (action === "addapplicant") {
+      if (!isHR_(user)) throw new Error("only HR can add candidates");
       var arole = p.role || "";
       var atab = tabForRole_(arole);
       if (!atab) throw new Error("no applicant sheet found for role: " + arole);
@@ -431,12 +570,29 @@ function doGet(e) {
       var data = addApplicant_(ash, p);
       return json_({ ok: true, tab: atab, row: data.row, id: data.id, applicant: data.applicant });
 
+    } else if (action === "deletecandidate") {
+      if (!isHR_(user)) throw new Error("only HR can delete candidates");
+      var did = p.id || "";
+      var dtab = p.tab || "";
+      var dloc = dtab ? findInTab_(dtab, did) : locateApplicant_(did);
+      if (!dloc) throw new Error("candidate not found: " + did);
+      ss_().getSheetByName(dloc.tab).deleteRow(dloc.row);
+      return json_({ ok: true, tab: dloc.tab, row: dloc.row, id: did });
+
     } else {
       throw new Error("unknown action: " + action);
     }
   } catch (err) {
     return error_(err);
   }
+}
+
+// Trim a user record to safe fields for the client (no sensitive data).
+function safeUser_(u) {
+  return {
+    id: u.id, name: u.name, role: u.role,
+    access: u.access, reviewField: u.reviewField, reviewColumn: u.reviewColumn
+  };
 }
 
 function findInTab_(tab, id) {

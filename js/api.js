@@ -8,6 +8,7 @@
 
 var API = (function () {
   var STORAGE_KEY = "hiring_app_url";
+  var USER_KEY = "hiring_user";   // logged-in user id (or name), persisted
   // Default Apps Script Web App URL. Overridable via Settings (stored in
   // localStorage). No sheet IDs / credentials are exposed - just the public
   // /exec endpoint.
@@ -23,6 +24,17 @@ var API = (function () {
   function isConfigured() {
     var u = getUrl();
     return !!u && u.indexOf("/exec") !== -1;
+  }
+
+  // ---- auth / session ----
+  var currentUser = null; // {id,name,role,access,...} as returned by login
+  function loadUser() {
+    try { return localStorage.getItem(USER_KEY) || ""; } catch (e) { return ""; }
+  }
+  function setUserParam(p) {
+    var u = currentUser && currentUser.id ? currentUser.id : loadUser();
+    if (u) p.user = u;
+    return p;
   }
 
   // Read-only actions are cached in-memory for a short TTL so navigation,
@@ -74,6 +86,7 @@ var API = (function () {
         reject(new Error("Not configured: set your Apps Script Web App URL."));
         return;
       }
+      setUserParam(params); // attach logged-in user to every request
       var write = !CACHE_ACTIONS[params.action];
       if (write) cacheClear(); // new data going to the sheet -> drop stale cache
       var read = CACHE_ACTIONS[params.action];
@@ -97,6 +110,13 @@ var API = (function () {
     setUrl: setUrl,
     isConfigured: isConfigured,
     refresh: function () { cacheClear(); },
+    getSessionUser: function () { return currentUser; },
+    setSessionUser: function (u) {
+      currentUser = u || null;
+      try { if (u && u.id) localStorage.setItem(USER_KEY, u.id); else localStorage.removeItem(USER_KEY); } catch (e) {}
+    },
+    users: function () { return call({ action: "users" }); },
+    login: function (userId) { return call({ action: "login", user: userId }); },
     dashboard: function () { return call({ action: "dashboard" }); },
     roles: function () { return call({ action: "roles" }); },
     roleApplicants: function (role) { return call({ action: "roleapplicants", role: role }); },
@@ -112,6 +132,9 @@ var API = (function () {
         if (fields[k] !== undefined && fields[k] !== null && fields[k] !== "") p[k] = fields[k];
       });
       return call(p);
+    },
+    deleteCandidate: function (id) {
+      return call({ action: "deletecandidate", id: id });
     }
   };
 })();

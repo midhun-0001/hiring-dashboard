@@ -36,6 +36,32 @@ data** and **no hard-coded** roles.
 
 - `D Status` = `Open` or `Closed` → drives the Open/Closed card color and counts.
 - `B Role Title` = the name of that role's applicant tab.
+- `F Interview Kit` (Complete/Incomplete) is no longer shown in the UI.
+
+### `Users` tab (optional — enables named sign-in & permissions)
+
+Add a tab named **`Users`** to control who can see and edit what. It is read by
+Apps Script and **enforced on the server** (not just hidden in the UI).
+
+| A | B | C | D | E | F |
+|---|---|---|---|---|---|
+| User ID | Name | Role | Access | Assigned Roles | Review Column |
+| HR01 | HR | HR | All | | |
+| P001 | Person 1 | Interviewer | Assigned | Mission Planning Engineer, GNSS | Anisha |
+
+- `D Access`:
+  - `All` — full access: view everything, edit any field, **Add** and **Delete**
+    candidates.
+  - `Assigned` — interviewer: can **only view roles listed in `E Assigned Roles`**
+    (comma/newline separated role titles, fuzzy-matched to tabs) and can **only
+    edit the review field named in `F Review Column`**. Cannot add or delete.
+- `F Review Column` maps a reviewer label to a sheet column:
+  `Anisha` → Review (Anisha); `Interviewer 1..4` → Interviewer Review 1..4.
+- On first load the dashboard asks you to **sign in**. Your choice is remembered
+  in `localStorage`. **Add Candidate / Delete** buttons appear only for
+  `Access: All` users; interviewers get a single **Edit Reviews** button limited
+  to their assigned review column. Permissions are also enforced by Apps Script
+  on every read/write.
 
 ### Role applicant tabs (one per role, named after the role title)
 
@@ -93,6 +119,14 @@ Open `index.html` in a browser (double-click, or serve statically, e.g.
 `python -m http.server`). First launch: paste the `/exec` URL in the banner or
 via **Settings**. The URL is remembered in `localStorage`.
 
+On load you're asked to **sign in** (choose your name from the `Users` tab, or
+use "Full access (temporary)" if the `Users` tab isn't created). Your access
+level controls what you can see/edit. Use the name chip in the top bar to switch
+or sign out.
+
+A **"Open source sheet"** link is shown inside the loading animation that opens
+the Google Sheet in a new tab.
+
 Auto-refreshes every ~45s; **Refresh** button forces an immediate reload
 (bypasses cache). A "Last updated: <time>" indicator sits in the top bar.
 
@@ -128,8 +162,10 @@ GitHub Pages rebuilds automatically (it already serves this `master` branch root
 > **Important:** the dashboard talks to your Apps Script Web App (`/exec` URL,
 > embedded as the default in `js/api.js`). That Apps Script must be **deployed
 > with the current `Code.gs`** (see Deploy section) for the newest features
-> (Add Candidate, Latest Completed) to work — the frontend is live on Pages, but
-> a stale Apps Script deployment won't expose those endpoints.
+> (Add Candidate, Latest Completed, **sign-in/permissions**, **Delete
+> Candidate**) to work — the frontend is live on Pages, but a stale Apps Script
+> deployment won't expose those endpoints (sign-in then falls back to a
+> temporary full-access session).
 
 ### Option B — host on your network
 
@@ -159,14 +195,17 @@ to free static hosting (Netlify / Vercel / GitHub Pages) and share that URL.
 
 | Action | Params | Returns |
 |---|---|---|
-| `dashboard` | — | `{ stats, roles, upcomingInterviews, interviews:{upcoming,pending,completed} }` |
-| `roles` | — | Role list with live `applicantCount` |
-| `roleapplicants` | `role` | Applicants for one role (pipeline source) |
-| `applicants` | — | All applicants across all role tabs |
-| `candidate` | `id` (Applicant ID) | One applicant's full record (all 5 reviews) |
-| `interviews` | — | `{ upcoming, pending, completed, recentCompleted }` |
-| `update` | `id`, `field`, `value` | Writes one field back to the correct sheet row |
-| `addapplicant` | `role`, `name`, `email`, … | Appends a new applicant row to that role's tab |
+| `users` | — | List of user IDs + names (for the sign-in dropdown) |
+| `login` | `user` (ID or name) | The user's safe profile `{id, name, role, access, reviewField}` |
+| `dashboard` | `user` | `{ stats, roles, upcomingInterviews, interviews:{upcoming,pending,completed} }` (filtered to visible roles) |
+| `roles` | `user` | Role list (filtered to visible roles) with live `applicantCount` |
+| `roleapplicants` | `role`, `user` | Applicants for one role; `denied:true` if not permitted |
+| `applicants` | `user` | All applicants across the user's visible role tabs |
+| `candidate` | `id`, `user` | One applicant's full record (all 5 reviews) |
+| `interviews` | `user` | `{ upcoming, pending, completed, recentCompleted }` |
+| `update` | `id`, `field`, `value`, `user` | Writes one field back (permission-checked) |
+| `addapplicant` | `role`, `name`, `email`, …, `user` | Appends a new applicant row (HR only) |
+| `deletecandidate` | `id`, `user` | Deletes the applicant's row from its tab (HR only) |
 
 `field` may be any of: `status`, `priority`, `time`, `ctc`, `experience`,
 `reviewAnisha`, `review1..4`, `name`, `email`, `phone`, `resume`, `position`.
@@ -198,7 +237,9 @@ Navigation: **Dashboard · Roles · Applicants · Interviews**
   role/department/status/priority filters, plus **Add Candidate**.
 - **Interviews** — Upcoming / Pending Scheduling / Completed.
 - **Candidate profile** — contact, application, all 5 review fields (empty ones
-  show "Not reviewed"), and edit buttons that write back to Sheets.
+  show "Not reviewed"), and edit buttons that write back to Sheets. Buttons are
+  permission-aware: HR sees all edits plus **Delete Candidate**; interviewers see
+  only **Edit Reviews** for their assigned review column.
 
 ## Adding a candidate from the website
 

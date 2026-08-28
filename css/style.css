@@ -130,6 +130,9 @@ input, select { font-family: inherit; font-size: 14px; }
 .btn-primary:hover { background: #1d4ed8; }
 .btn-ghost { border-color: transparent; background: transparent; }
 .btn-ghost:hover { background: var(--soft-2); }
+.btn-danger { background: #dc2626; border-color: #dc2626; color: #fff; }
+.btn-danger:hover { background: #b91c1c; }
+.btn-user { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btn-sm { padding: 4px 8px; font-size: 12px; }
 .icon { width: 15px; height: 15px; flex: none; }
 
@@ -487,11 +490,18 @@ body { transition: background-color 0.15s, color 0.15s; }
   100%    { opacity: 0; }
 }
 
-.leo-count {
-  font-family: "Archivo Black", "Arial Black", sans-serif;
-  font-size: 26px; color: var(--text); line-height: 1;
+.leo-link {
+  display: inline-block;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  text-decoration: none;
+  color: var(--brand);
+  border: 1px solid var(--active-tab);
+  border-radius: 999px;
+  padding: 5px 14px;
+  transition: background 0.15s ease, color 0.15s ease;
 }
-.leo-count-dot { color: var(--muted); margin: 0 3px; }
+.leo-link:hover { background: var(--active-tab); color: var(--active-tab-text); }
 .leo-title {
   font-family: "Archivo Black", "Arial Black", sans-serif;
   font-size: 15px; letter-spacing: 0.02em; text-transform: lowercase; color: var(--text);

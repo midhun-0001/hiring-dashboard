@@ -13,7 +13,9 @@
     currentRole: null,   // { title, status, department, ... }
     currentCandidate: null,
     currentIvSeg: "upcoming",
-    filters: { search: "", role: "", dept: "", status: "", priority: "" }
+    filters: { search: "", role: "", dept: "", status: "", priority: "" },
+    user: null,          // logged-in safe user { id, name, role, access, reviewField, ... }
+    loginReady: false
   };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -90,37 +92,19 @@
 
   /* ---------------- config / banner ---------------- */
 
-  var LEO_MAX = 24;          // constellation target shown next to the counter
-  var LEO_TICK = 230;        // ms per increment (-> ~24 sats in ~5.5s)
-  var leoTimer = null;
-
-  function startLeoCounter() {
-    var n = 0;
-    var numEl = $("leo-count-num");
-    if (numEl) numEl.textContent = "0";
-    clearInterval(leoTimer);
-    leoTimer = setInterval(function () {
-      if (numEl) {
-        n = (n >= LEO_MAX) ? 1 : n + 1;
-        numEl.textContent = n;
-      }
-    }, LEO_TICK);
-  }
-
   function hideLoading() {
-    clearInterval(leoTimer);
     var o = $("loading-overlay"); if (o) o.classList.add("hidden");
   }
 
   function applyConfigUI() {
     var ok = API.isConfigured();
     $("config-banner").classList.toggle("hidden", ok);
-    if (ok) loadDashboard();
+    if (ok) ensureLoggedIn();
     else hideLoading(); // nothing to load yet -> show the connect banner
   }
 
   function openConfigModal() { $("config-input").value = API.getUrl(); $("config-modal").classList.remove("hidden"); }
-  function closeModals() { $("config-modal").classList.add("hidden"); $("edit-modal").classList.add("hidden"); $("add-modal").classList.add("hidden"); }
+  function closeModals() { $("config-modal").classList.add("hidden"); $("edit-modal").classList.add("hidden"); $("add-modal").classList.add("hidden"); $("login-modal").classList.add("hidden"); }
 
   /* ---------------- view switching ---------------- */
 
@@ -208,7 +192,6 @@
     if (!roles || !roles.length) { el.innerHTML = '<div class="empty">No roles found in the Roles tab.</div>'; return; }
     el.innerHTML = roles.map(function (r) {
       var oc = openClose(r.status);
-      var kit = r.interviewKit;
       return '<div class="role-card" data-title="' + esc(r.title) + '">' +
         '<div class="role-card-head"><div>' +
           '<div class="role-card-title">' + esc(r.title) + '</div>' +
@@ -217,7 +200,6 @@
         '<div class="role-meta">' +
           '<span class="role-meta-tag"><strong>' + (r.applicantCount || 0) + '</strong> applicants</span>' +
           '<span class="role-meta-tag">Approval: ' + esc(r.approvalStage) + '</span>' +
-          '<span class="role-meta-tag">Interview Kit: ' + esc(kit) + '</span>' +
         '</div></div>';
     }).join("");
     el.querySelectorAll(".role-card").forEach(function (card) {
@@ -241,8 +223,7 @@
       '<span>Status: ' + oc.label + '</span>' +
       '<span>Department: ' + esc(role.department) + '</span>' +
       '<span>Applicants: ' + (role.applicantCount || 0) + '</span>' +
-      '<span>Approval: ' + esc(role.approvalStage) + '</span>' +
-      '<span>Interview Kit: ' + esc(role.interviewKit) + '</span>';
+      '<span>Approval: ' + esc(role.approvalStage) + '</span>';
     goView("role-detail");
     $("pipeline").innerHTML = '<div class="spinner"></div>';
     API.roleApplicants(title).then(function (data) {
@@ -436,16 +417,31 @@
 
     $("cand-sections").innerHTML = sections.join("");
 
-    $("cand-actions").innerHTML = [
-      '<button class="btn" data-edit="status">Edit Status</button>',
-      '<button class="btn" data-edit="priority">Edit Priority</button>',
-      '<button class="btn" data-edit="time">Edit Time / Scheduling</button>',
-      '<button class="btn" data-edit="ctc">Edit CTC</button>',
-      '<button class="btn" data-edit="reviews">Edit Reviews</button>',
-      '<button class="btn" data-edit="contact">Edit Contact</button>'
-    ].join("");
-    $("cand-actions").querySelectorAll("button").forEach(function (btn) {
+    var allowed = editableSchemas();
+    var buttons = [];
+    allowed.forEach(function (w) {
+      var label = w === "status" ? "Edit Status" :
+        w === "priority" ? "Edit Priority" :
+        w === "time" ? "Edit Time / Scheduling" :
+        w === "ctc" ? "Edit CTC" :
+        w === "contact" ? "Edit Contact" : "Edit Reviews";
+      buttons.push('<button class="btn" data-edit="' + w + '">' + label + '</button>');
+    });
+    if (canDelete()) buttons.push('<button class="btn btn-danger" id="cand-delete-btn">Delete Candidate</button>');
+    $("cand-actions").innerHTML = buttons.join("");
+    $("cand-actions").querySelectorAll("button[data-edit]").forEach(function (btn) {
       btn.addEventListener("click", function () { openEdit(btn.dataset.edit); });
+    });
+    var del = $("cand-delete-btn");
+    if (del) del.addEventListener("click", function () {
+      var name = (c.name || "").trim() || c.id;
+      if (!window.confirm('Delete "' + name + '" permanently from the sheet?')) return;
+      API.deleteCandidate(c.id).then(function () {
+        toast("Deleted " + name);
+        goBack();
+        loadDashboard();
+        if (state.allApplicants.length) loadAllApplicants();
+      }).catch(showError);
     });
 
     goView("candidate");
@@ -556,23 +552,31 @@
   var editState = null;
 
   function openEdit(which) {
+    var allowed = editableSchemas();
+    if (allowed.indexOf(which) === -1) {
+      toast(isHR() ? "That edit is not available here." : "You can only edit your assigned review field.");
+      return;
+    }
     var schema = EDIT_SCHEMAS[which];
     if (!schema || !state.currentCandidate) return;
     var c = state.currentCandidate;
-    editState = { used: schema.fields.map(function (f) { return f.key; }) };
+    var fields = schema.fields.filter(function (f) {
+      return editableReviewKeys().indexOf(f.key) !== -1;
+    });
+    if (!fields.length) { toast("You have no editable fields here."); return; }
+    editState = { used: fields.map(function (f) { return f.key; }) };
     $("edit-title").textContent = schema.title;
-    var fields = schema.fields.map(function (f) {
-      var val = c[f.key] || "";
-      var input;
-      if (f.type === "textarea") {
-        input = '<textarea class="input" id="ef-' + f.key + '" rows="' + (f.rows || 3) + '">' + esc(val) + '</textarea>';
-      } else {
-        input = '<input class="input" id="ef-' + f.key + '" type="text" value="' + esc(val) + '" />';
-      }
-      return '<label class="field"><span>' + f.label + '</span>' + input + '</label>';
-    }).join("");
-    var hint = schema.hint ? '<p class="muted" style="font-size:12px;margin-bottom:12px">' + esc(schema.hint) + '</p>' : "";
-    $("edit-fields").innerHTML = hint + fields;
+    $("edit-fields").innerHTML = (schema.hint ? '<p class="muted" style="font-size:12px;margin-bottom:12px">' + esc(schema.hint) + '</p>' : "") +
+      fields.map(function (f) {
+        var val = c[f.key] || "";
+        var input;
+        if (f.type === "textarea") {
+          input = '<textarea class="input" id="ef-' + f.key + '" rows="' + (f.rows || 3) + '">' + esc(val) + '</textarea>';
+        } else {
+          input = '<input class="input" id="ef-' + f.key + '" type="text" value="' + esc(val) + '" />';
+        }
+        return '<label class="field"><span>' + f.label + '</span>' + input + '</label>';
+      }).join("");
     $("edit-modal").classList.remove("hidden");
   }
 
@@ -670,6 +674,8 @@
   /* ---------------- add candidate ---------------- */
 
   function openAddModal() {
+    if (!state.user) { toast("Sign in first"); openLoginModal(); return; }
+    if (!isHR()) { toast("Only HR can add candidates."); return; }
     var roles = (state.dashboard && state.dashboard.roles) || [];
     var sel = $("add-role");
     sel.innerHTML = '<option value="">Select role…</option>' + roles.map(function (r) {
@@ -729,6 +735,123 @@
     if (e.target.classList && e.target.classList.contains("modal")) closeModals();
   });
 
+  /* ---------------- auth / login ---------------- */
+
+  function isHR() { return !!(state.user && state.user.access === "all"); }
+  function canDelete() { return isHR(); }
+  function isReviewer() { return !!(state.user && state.user.reviewField); }
+
+  // which review fields this user may edit (HR = all 5, reviewer = own 1)
+  function editableReviewKeys() {
+    if (isHR()) return ["reviewAnisha", "review1", "review2", "review3", "review4"];
+    if (state.user && state.user.reviewField) return [state.user.reviewField];
+    return [];
+  }
+  // which of the standard edit schemas this user may open (HR = all, else only their review)
+  function editableSchemas() {
+    if (isHR()) return ["status", "priority", "time", "ctc", "reviews", "contact"];
+    if (state.user && state.user.reviewField) return ["reviews"];
+    return [];
+  }
+
+  function setUser(u) {
+    state.user = u;
+    $("user-chip-label").textContent = u ? (u.name || u.id || "Signed in") : "Sign in";
+    $("user-chip").title = u ? ("Signed in as " + (u.name || u.id) + (isHR() ? " (HR)" : "")) : "Sign in to edit";
+    API.setSessionUser(u);
+    applyAccessControls();
+  }
+
+  function applyAccessControls() {
+    var canAdd = isHR();
+    ["add-candidate-btn", "add-candidate-btn-2"].forEach(function (id) {
+      var b = $(id); if (b) b.style.display = canAdd ? "" : "none";
+    });
+    // update current candidate actions if open
+    if (state.currentCandidate && state.currentView === "candidate") renderCandidate(state.currentCandidate);
+  }
+
+  function openLoginModal() {
+    hideLoading();
+    $("login-msg").textContent = "Select your name and press Continue.";
+    $("login-modal").classList.remove("hidden");
+    loadLoginUsers();
+  }
+  function closeLoginModal() { $("login-modal").classList.add("hidden"); }
+
+  function loadLoginUsers() {
+    API.users().then(function (data) {
+      var users = data.users || [];
+      var sel = $("login-list");
+      if (!users.length) { sel.innerHTML = '<option value="">No users found in the Users tab</option>'; $("login-msg").textContent = "Add a Users tab (User ID | Name | Role | Access) to enable named sign-in."; return; }
+      sel.innerHTML = '<option value="">Select…</option>' + users.map(function (u) {
+        return '<option value="' + esc(u.id) + '">' + esc(u.name) + ' (' + esc(u.id) + ')</option>';
+      }).join("");
+      state.loginReady = true;
+    }).catch(function (err) {
+      // stale / not-yet-deployed backend without the users endpoint ->
+      // keep it usable with a temporary full-access session.
+      var sel = $("login-list");
+      sel.innerHTML = '<option value="">Users not available</option>';
+      $("login-msg").textContent = "Could not load users (" + (err && err.message ? err.message : "error") + "). Use \u201cFull access (temporary)\u201d to continue, then re-deploy Code.gs to enable per-user permissions.";
+    });
+  }
+
+  function completeLogin(id) {
+    if (!id) { toast("Select a user first"); return; }
+    API.login(id).then(function (data) {
+      if (data && data.user) {
+        setUser(data.user);
+        closeLoginModal();
+        toast("Signed in as " + (data.user.name || data.user.id));
+        loadDashboard(); // re-fetch filtered by this user
+        API.refresh();
+      } else {
+        $("login-msg").textContent = "Sign-in failed for that name. Pick another or use Full access.";
+      }
+    }).catch(function (err) {
+      // stale backend -> fall back to full access so the tool stays usable
+      $("login-msg").textContent = "Sign-in failed (" + (err && err.message ? err.message : "error") + "). Continuing with full access.";
+      setUser({ id: "full", name: "Full Access", role: "HR", access: "all" });
+      closeLoginModal();
+    });
+  }
+
+  function ensureLoggedIn() {
+    // restore a saved session if present
+    var u = API.getSessionUser();
+    if (u) { setUser(u); loadDashboard(); return; }
+    var savedId = "";
+    try { savedId = localStorage.getItem("hiring_user") || ""; } catch (e) {}
+    if (savedId) {
+      API.login(savedId).then(function (data) {
+        if (data && data.user) { setUser(data.user); loadDashboard(); }
+        else openLoginModal();
+      }).catch(function () { openLoginModal(); });
+      return;
+    }
+    openLoginModal();
+  }
+
+  $("user-chip").addEventListener("click", function () {
+    if (state.user) {
+      setUser(null);
+      toast("Signed out");
+      API.refresh();
+      loadDashboard();
+    }
+    openLoginModal();
+  });
+  $("login-btn").addEventListener("click", function () { completeLogin($("login-list").value); });
+  $("login-full").addEventListener("click", function () {
+    setUser({ id: "full", name: "Full Access", role: "HR", access: "all" });
+    closeLoginModal();
+    toast("Signed in with full access");
+    API.refresh();
+    loadDashboard();
+  });
+  $("login-msg").addEventListener("click", function () { /* noop */ });
+
   /* ---------------- auto refresh ---------------- */
 
   function startAutoRefresh() {
@@ -742,7 +865,6 @@
   /* ---------------- init ---------------- */
 
   initTheme();
-  startLeoCounter();
   applyConfigUI();
   startAutoRefresh();
 })();
