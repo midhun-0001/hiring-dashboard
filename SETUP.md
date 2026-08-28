@@ -105,7 +105,33 @@ server and invalidate the cache.
 Click the sun/moon button in the top bar to toggle light/dark. The choice is
 remembered per-browser in `localStorage`.
 
-## Sharing with teammates (host on your network)
+## Sharing with teammates
+
+### Option A — GitHub Pages (live now)
+Repository: `github.com/midhun-0001/hiring-dashboard`
+Live URL: **https://midhun-0001.github.io/hiring-dashboard/**
+
+Anyone with the link can open the dashboard in any browser, on any network.
+After editing local files, deploy by committing + pushing:
+```
+git add -A
+git commit -m "update"
+git push
+```
+GitHub Pages rebuilds automatically (it already serves this `master` branch root).
+
+> **Privacy note:** this page and the Apps Script `/exec` URL are public. Anyone
+> with the link can **read** the applicant data from the sheet. Writes happen only
+> via the dashboard. Use host-on-your-network (Option B) or a private host if the
+> data must stay internal.
+
+> **Important:** the dashboard talks to your Apps Script Web App (`/exec` URL,
+> embedded as the default in `js/api.js`). That Apps Script must be **deployed
+> with the current `Code.gs`** (see Deploy section) for the newest features
+> (Add Candidate, Latest Completed) to work — the frontend is live on Pages, but
+> a stale Apps Script deployment won't expose those endpoints.
+
+### Option B — host on your network
 
 The dashboard is plain static files + the Apps Script `/exec` URL (pre-filled as
 the default, so teammates don't need to configure anything). To let other
