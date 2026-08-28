@@ -1,0 +1,45 @@
+name: CI
+
+# Runs on every push and pull request to validate the static site.
+# Deployment itself is handled automatically by GitHub Pages (which rebuilds
+# the site from the `master` branch on each push). This workflow is a guard so
+# a bad push fails loudly instead of silently going live.
+#
+# NOTE: this does NOT deploy the Apps Script backend. `Code.gs` runs inside
+# Google Apps Script and must be published manually via
+# Extensions > Apps Script > Deploy > New version. That is a Google-side action
+# and cannot be automated from git.
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+jobs:
+  validate:
+    name: Validate static site
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Syntax-check JS (browser + server)
+        run: |
+          node --check js/app.js
+          node --check js/api.js
+          node --check serve.js
+
+      - name: Verify required static files exist
+        run: |
+          test -f index.html
+          test -f css/style.css
+          # Ensure the frontend references the expected scripts/styles
+          grep -q 'js/app.js' index.html
+          grep -q 'js/api.js' index.html
+          grep -q 'css/style.css' index.html
+          echo "Static site OK"
