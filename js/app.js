@@ -101,6 +101,9 @@
   function hideLoading() {
     var o = $("loading-overlay"); if (o) o.classList.add("hidden");
   }
+  function hideRoleLoader() {
+    var o = $("role-loader"); if (o) o.classList.add("hidden");
+  }
 
   function applyConfigUI() {
     var ok = API.isConfigured();
@@ -152,10 +155,12 @@
       renderDashboardInterviews(data);
       setUpdated();
       hideLoading();
+      hideRoleLoader();
       // refresh global applicants if applicants view is active/loaded
       if (state.allApplicants.length === 0 && state.currentView === "applicants") loadApplicantsLazy();
     }).catch(function () {
       hideLoading();
+      hideRoleLoader();
       renderStats({ openRoles: 0, closedRoles: 0, totalApplicants: 0 });
       $("roles-grid").innerHTML = '<div class="empty">Could not load roles.</div>';
       $("roles-grid-2").innerHTML = '<div class="empty">Could not load roles.</div>';
@@ -905,4 +910,6 @@
   initTheme();
   applyConfigUI();
   startAutoRefresh();
+  // Safety: never let a loader hold the UI hostage if the backend hangs.
+  setTimeout(function () { hideLoading(); hideRoleLoader(); }, 12000);
 })();
