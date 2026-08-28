@@ -90,6 +90,13 @@
     b.classList.remove("hidden");
   }
 
+  /* Small inline loading indicator for containers that fetch data. */
+  function inlineLoading(el, msg) {
+    if (!el) return;
+    el.innerHTML = '<div class="inline-loader"><span class="inline-spinner"></span>' +
+      (msg ? '<span class="inline-loader-msg">' + esc(msg) + '</span>' : '') + '</div>';
+  }
+
   /* ---------------- config / banner ---------------- */
 
   function hideLoading() {
@@ -132,6 +139,10 @@
   }
 
   function loadDashboard() {
+    inlineLoading($("roles-grid"), "Loading roles…");
+    inlineLoading($("roles-grid-2"), "Loading roles…");
+    inlineLoading($("dashboard-upcoming"), "Loading interviews…");
+    inlineLoading($("dashboard-completed"), "Loading interviews…");
     API.dashboard().then(function (data) {
       state.dashboard = data;
       renderStats(data.stats);
@@ -156,6 +167,10 @@
   }
 
   function loadAllApplicants() {
+    var body = $("applicants-body");
+    var empty = $("applicants-empty");
+    if (body) body.innerHTML = '<tr><td colspan="8"><div class="inline-loader"><span class="inline-spinner"></span><span class="inline-loader-msg">Loading applicants…</span></div></td></tr>';
+    if (empty) empty.classList.add("hidden");
     API.applicants().then(function (data) {
       state.allApplicants = data.applicants || [];
       buildApplicantFilters();
@@ -225,7 +240,7 @@
       '<span>Applicants: ' + (role.applicantCount || 0) + '</span>' +
       '<span>Approval: ' + esc(role.approvalStage) + '</span>';
     goView("role-detail");
-    $("pipeline").innerHTML = '<div class="spinner"></div>';
+    inlineLoading($("pipeline"), "Loading applicants…");
     API.roleApplicants(title).then(function (data) {
       renderPipeline(data.applicants || []);
     }).catch(showError);
@@ -361,6 +376,8 @@
   /* ---------------- candidates ---------------- */
 
   function openCandidate(id) {
+    inlineLoading($("cand-sections"), "Loading candidate…");
+    var acts = $("cand-actions"); if (acts) acts.innerHTML = "";
     API.candidate(id).then(function (c) {
       state.currentCandidate = c;
       renderCandidate(c);

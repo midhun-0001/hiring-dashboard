@@ -325,6 +325,18 @@ input, select { font-family: inherit; font-size: 14px; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.inline-loader {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  color: var(--muted); font-size: 12.5px; padding: 14px 8px;
+}
+.inline-spinner {
+  width: 15px; height: 15px; border: 2px solid var(--border);
+  border-top-color: var(--brand); border-radius: 50%;
+  animation: spin 0.8s linear infinite; flex: none;
+}
+.inline-loader-msg { white-space: nowrap; }
+td .inline-loader { padding: 22px 8px; }
+
 @media (max-width: 720px) {
   .stats-grid { grid-template-columns: 1fr; }
   .config-banner-form { min-width: 100%; }
