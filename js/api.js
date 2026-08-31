@@ -117,6 +117,7 @@ var API = (function () {
       return call({ action: "deletecandidate", id: id });
     },
     calendar: function () { return call({ action: "calendar" }); },
+    calendarFreeBusy: function (email, date) { return call({ action: "calendarfreebusy", email: email, date: date }); },
     calendarCreate: function (f) {
       var p = { action: "calendarcreate", candidate: f.candidate, role: f.role, date: f.date, time: f.time };
       if (f.duration) p.duration = f.duration;

@@ -448,6 +448,60 @@ function cal_() {
   return id ? CalendarApp.getCalendarById(id) : CalendarApp.getDefaultCalendar();
 }
 
+// Free/busy for one interviewer on one day. Resolves the person's calendar by
+// email (their Google calendar must be shared with the Apps Script account) and
+// returns the day's occupied slots plus gaps where they look free.
+function calendarFreeBusy_(p) {
+  var email = norm_(p.email || p.interviewerEmail);
+  var date = norm_(p.date);
+  if (!email) throw new Error("interviewer email required");
+  var d = String(date).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!d) throw new Error("valid date required");
+  var dayStart = new Date(parseInt(d[1], 10), parseInt(d[2], 10) - 1, parseInt(d[3], 10), 0, 0, 0);
+  var dayEnd = new Date(dayStart.getTime() + 86400000);
+
+  var cal;
+  try { cal = CalendarApp.getCalendarById(email); } catch (e) { cal = null; }
+  // Fall back to the default calendar if the email is blank/owner.
+  if (!cal) {
+    var def = CalendarApp.getDefaultCalendar();
+    if (norm_(def.getId()).toLowerCase() === email.toLowerCase()) cal = def;
+    else cal = null;
+  }
+  if (!cal) {
+    return json_({ ok: false, accessible: false, email: email, date: date,
+      message: "Cannot read " + email + "'s calendar. It must be shared with the Apps Script account." });
+  }
+
+  var events;
+  try { events = cal.getEvents(dayStart, dayEnd); } catch (e) { events = []; }
+  var busy = (events || []).map(function (ev) {
+    var et = ev.getTitle ? ev.getTitle() : "";
+    return {
+      title: norm_(et),
+      start: toIso_(ev.getStartTime()),
+      end: toIso_(ev.getEndTime())
+    };
+  });
+  busy.sort(function (a, b) { return (a.start).localeCompare(b.start); });
+
+  // Build the free slots (9:00 - 18:00) that don't overlap any busy event.
+  var dayStartIso = toIso_(new Date(dayStart.getTime() + 9 * 3600000));
+  var dayEndIso = toIso_(new Date(dayStart.getTime() + 18 * 3600000));
+  var free = [];
+  var cursor = dayStartIso;
+  for (var i = 0; i < busy.length; i++) {
+    var b = busy[i];
+    if (b.end < cursor) continue;                 // fully before current gap
+    if (b.start > cursor && b.start < dayEndIso) free.push({ start: cursor, end: b.start });
+    if (b.end > cursor) cursor = b.end > dayEndIso ? dayEndIso : b.end;
+  }
+  if (cursor < dayEndIso) free.push({ start: cursor, end: dayEndIso });
+
+  return json_({ ok: true, accessible: true, email: email, date: date, busy: busy, free: free, dayStart: dayStartIso, dayEnd: dayEndIso });
+}
+
+
 function readInterviews_() {
   var sh = ss_().getSheetByName(SETTINGS.INTERVIEWS_TAB_NAME);
   var out = [];
@@ -790,6 +844,9 @@ function doGet(e) {
       var upcoming = evs.filter(function (x) { return (x.date + " " + x.time) >= toIso_(now); });
       var past = evs.filter(function (x) { return (x.date + " " + x.time) < toIso_(now); });
       return json_({ events: evs, upcoming: upcoming, past: past });
+
+    } else if (action === "calendarfreebusy") {
+      return calendarFreeBusy_(p);
 
     } else if (action === "calendarcreate") {
       cacheClear_();

@@ -979,36 +979,60 @@
     if (!ivName && !ivEmail) { box.className = "availability hidden"; return; }
 
     var start = new Date(date + "T" + time + ":00");
-    if (isNaN(start.getTime())) { box.className = "availability hidden"; return; }
-    var end = new Date(start.getTime() + dur * 60000);
 
+    // 1) Local conflict check against this site's own scheduled interviews.
     var mine = findInterviewsFor(ivName, ivEmail);
-    var busy = mine.filter(function (e) {
+    var busySelf = mine.filter(function (e) {
       if (!e.date || !e.time) return false;
       var es = new Date(e.date + "T" + e.time + ":00");
       if (isNaN(es.getTime())) return false;
       var ee = new Date(es.getTime() + ((e.duration || 60) * 60000));
-      return start < ee && es < end;
+      return start < ee && es < new Date(start.getTime() + dur * 60000);
     });
 
-    if (busy.length) {
-      box.className = "availability availability-busy";
-      box.innerHTML = '<strong>' + esc(ivName || ivEmail) + '</strong> is already booked at this time:' +
-        '<ul>' + busy.map(function (e) {
-          return '<li>' + esc(e.candidate || "") + ' · ' + esc(fmtDate(e.date)) +
-            ' ' + esc(fmtTime(e.time)) + ' (' + (e.duration || 60) + ' min)</li>';
-        }).join("") + '</ul>';
+    // 2) Real Google Calendar free/busy from the backend (their shared calendar).
+    if (ivEmail) {
+      box.className = "availability";
+      box.innerHTML = '<strong>' + esc(ivName || ivEmail) + '</strong> on ' + esc(fmtDate(date)) + '… checking calendar';
+      API.calendarFreeBusy(ivEmail, date).then(function (fb) {
+        if (!fb.accessible) {
+          box.className = "availability availability-busy";
+          box.innerHTML = '<strong>' + esc(ivName || ivEmail) + '</strong>: ' + esc(fb.message || "calendar not accessible");
+          return;
+        }
+        var busy = fb.busy || [];
+        var cc = busySelf.map(function (e) {
+          return esc(e.candidate) + ' ' + esc(fmtTime(e.time));
+        });
+        if (busy.length) {
+          box.className = "availability availability-busy";
+          box.innerHTML = '<strong>' + esc(ivName || ivEmail) + '</strong> is occupied on ' + esc(fmtDate(date)) +
+            ':<ul>' + busy.map(function (b) {
+              return '<li>' + esc(fmtTime(b.start.split(" ")[1])) + ' – ' + esc(fmtTime(b.end.split(" ")[1])) + ' · ' + esc(b.title || "Busy") + '</li>';
+            }).join("") + (cc.length ? '<li class="av-self">Site schedule overlaps: ' + cc.join("; ") + '</li>' : "") + '</ul>';
+        } else {
+          box.className = "availability availability-ok";
+          box.innerHTML = '<strong>' + esc(ivName || ivEmail) + '</strong> appears free on ' + esc(fmtDate(date)) +
+            (cc.length ? '. Note: another site interview overlaps (' + cc.join("; ") + ').' : '');
+        }
+      }).catch(function () {
+        box.className = "availability availability-ok";
+        box.innerHTML = '<strong>' + esc(ivName || ivEmail) + '</strong>: could not reach calendar.';
+      });
       return;
     }
 
-    var sameDay = mine.filter(function (e) { return e.date === date; });
-    box.className = "availability availability-ok";
-    if (sameDay.length) {
-      box.innerHTML = '<strong>' + esc(ivName || ivEmail) + '</strong> is free at this time. Same day: ' +
-        sameDay.map(function (e) { return esc(e.candidate) + ' ' + esc(fmtTime(e.time)); }).join(", ") + '.';
-    } else {
-      box.innerHTML = '<strong>' + esc(ivName || ivEmail) + '</strong> appears free at this time.';
+    // No email -> fall back to the site-only check.
+    if (busySelf.length) {
+      box.className = "availability availability-busy";
+      box.innerHTML = '<strong>' + esc(ivName) + '</strong> is already booked in this site at this time:\n' +
+        '<ul>' + busySelf.map(function (e) {
+          return '<li>' + esc(e.candidate || "") + ' · ' + esc(fmtDate(e.date)) + ' ' + esc(fmtTime(e.time)) + ' (' + (e.duration || 60) + ' min)</li>';
+        }).join("") + '</ul>';
+      return;
     }
+    box.className = "availability availability-ok";
+    box.innerHTML = '<strong>' + esc(ivName) + '</strong> has no site interview at this time (add their email to check the Google calendar).';
   }
 
   function openCalendarModal(id, pendingId, optCandidate) {
