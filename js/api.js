@@ -11,7 +11,7 @@ var API = (function () {
   // Default Apps Script Web App URL. Overridable via Settings (stored in
   // localStorage). No sheet IDs / credentials are exposed - just the public
   // /exec endpoint.
-  var DEFAULT_APP_URL = "https://script.google.com/macros/s/AKfycbzZCAImcEbvbNzmu4l4FjhTpXC7HN61Sz9JLufCsO4yr7M_6c1prqd21hCZIMADe6GB/exec";
+  var DEFAULT_APP_URL = "https://script.google.com/macros/s/AKfycbyOBB4_DDkwKwZpfifnhXWIimpswt62hh-zT4FgG8o0IXEwa2kIYXzMuKf5TWkNF1HF/exec";
 
   function getUrl() {
     try { return localStorage.getItem(STORAGE_KEY) || DEFAULT_APP_URL; } catch (e) { return DEFAULT_APP_URL; }
