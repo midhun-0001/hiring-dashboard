@@ -42,6 +42,16 @@
  * credentials; the client only sees the /exec URL.
  */
 
+// Run this ONCE in the Apps Script editor (select it in the function dropdown
+// and press Run) to grant the Calendar OAuth scope. Without this the Web App
+// throws "The script does not have permission to perform that action.
+// Required permissions: .../auth/calendar" when scheduling. After running it,
+// re-deploy the Web App (Deploy > New deployment) to bake in the scope.
+function authorizeCalendar() {
+  var cal = CalendarApp.getDefaultCalendar();
+  return "Authorized as: " + (cal.getName ? cal.getName() : cal.getId());
+}
+
 var SETTINGS = {
   ROLES_TAB_NAME: "Roles",
   // All applicants live in ONE tab. The role an applicant applied for is read
