@@ -151,6 +151,14 @@
       '</div>'));
   }
 
+  function skeletonChart() {
+    skelOn($("roles-chart"), rep(6,
+      '<div class="chart-row">' +
+        '<div class="skel skel-line mid"></div>' +
+        '<div class="skel" style="height:10px;border-radius:999px;flex:1"></div>' +
+      '</div>'));
+  }
+
   /* Candidate profile: mirrors the four groups renderCandidate builds
      (Candidate / Application / Reviews / Interview) plus the action row. */
   function skeletonCandidate() {
@@ -259,6 +267,7 @@
   function loadDashboard() {
     showRoleLoader();
     skeletonStats();
+    skeletonChart();
     skeletonRoles("roles-grid", 6);
     skeletonRoles("roles-grid-2", 6);
     skeletonList("dashboard-upcoming", 3);
@@ -269,6 +278,7 @@
     API.dashboard().then(function (data) {
       state.dashboard = data;
       renderStats(data.stats);
+      renderRoleChart(data.roles);
       renderRoles("roles-grid", data.roles);
       renderRoles("roles-grid-2", data.roles);
       $("roles-count").textContent = data.roles.length + " role" + (data.roles.length === 1 ? "" : "s");
@@ -283,13 +293,39 @@
       hideLoading();
       hideRoleLoader();
       renderStats({ openRoles: 0, closedRoles: 0, totalApplicants: 0 });
-      ["roles-grid", "roles-grid-2", "dashboard-upcoming", "dashboard-completed"].forEach(function (id) { skelOff($(id)); });
+      ["roles-grid", "roles-grid-2", "roles-chart", "dashboard-upcoming", "dashboard-completed"].forEach(function (id) { skelOff($(id)); });
       $("roles-grid").innerHTML = '<div class="empty">Could not load roles.</div>';
       $("roles-grid-2").innerHTML = '<div class="empty">Could not load roles.</div>';
+      $("roles-chart").innerHTML = '<div class="empty">Could not load chart.</div>';
       $("dashboard-upcoming").innerHTML = '<div class="empty">Could not load interviews.</div>';
       $("dashboard-completed").innerHTML = '';
       showError(arguments[0]);
     });
+  }
+
+  // Horizontal bar chart: applicant count per role (top 10 by count), no libs.
+  function renderRoleChart(roles) {
+    var el = $("roles-chart");
+    if (!el) return;
+    skelOff(el);
+    var countEl = $("chart-count");
+    var list = (roles || []).slice();
+    if (!list.length) { el.innerHTML = '<div class="empty">No roles yet.</div>'; return; }
+    var top = list.slice().sort(function (a, b) { return (b.applicantCount || 0) - (a.applicantCount || 0); }).slice(0, 10);
+    var max = 1;
+    top.forEach(function (r) { var n = r.applicantCount || 0; if (n > max) max = n; });
+    el.innerHTML = top.map(function (r) {
+      var n = r.applicantCount || 0;
+      var pct = Math.round(n / max * 100);
+      var label = (r.title || "Unknown role");
+      return '<div class="chart-row" title="' + esc(label) + '">' +
+        '<div class="chart-label">' + esc(label) + '</div>' +
+        '<div class="chart-track"><div class="chart-fill" style="width:' + (pct < 3 ? 3 : pct) + '%"></div></div>' +
+        '<div class="chart-num">' + n + '</div>' +
+      '</div>';
+    }).join("");
+    if (countEl && top.length < list.length) countEl.textContent = "Top " + top.length + " of " + list.length + " roles";
+    else if (countEl) countEl.textContent = list.length + " role" + (list.length === 1 ? "" : "s");
   }
 
   function loadAllApplicants() {

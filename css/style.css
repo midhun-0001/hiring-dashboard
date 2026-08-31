@@ -211,6 +211,24 @@ input, select { font-family: inherit; font-size: 14px; }
 .stat-value { font-size: 28px; font-weight: 700; margin-top: 4px; letter-spacing: -0.02em; }
 .stat-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
+/* ---------- Applicants per role bar chart ---------- */
+.roles-chart { padding: 16px 20px 18px; display: flex; flex-direction: column; gap: 9px; }
+.chart-row { display: grid; grid-template-columns: 180px 1fr 34px; align-items: center; gap: 10px; }
+.chart-label {
+  font-size: 12.5px; color: var(--text); font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chart-track { background: var(--soft); border-radius: 999px; height: 14px; overflow: hidden; }
+.chart-fill {
+  height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--brand), #6d8dff);
+  min-width: 3px; transition: width 0.4s ease;
+}
+.chart-num { font-size: 13px; font-weight: 600; color: var(--muted); text-align: right; }
+@media (max-width: 560px) {
+  .chart-row { grid-template-columns: 120px 1fr 30px; }
+}
+
 /* ---------- Panels ---------- */
 .panel {
   background: var(--surface);
