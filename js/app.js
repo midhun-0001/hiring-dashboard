@@ -152,11 +152,12 @@
   }
 
   function skeletonChart() {
-    skelOn($("roles-chart"), rep(6,
-      '<div class="chart-row">' +
+    skelOn($("roles-chart"), '<div class="chart-bars">' + rep(6,
+      '<div class="chart-bar">' +
+        '<div class="skel skel-line short"></div>' +
+        '<div class="skel" style="flex:1;width:100%;border-radius:6px 6px 0 0"></div>' +
         '<div class="skel skel-line mid"></div>' +
-        '<div class="skel" style="height:10px;border-radius:999px;flex:1"></div>' +
-      '</div>'));
+      '</div>') + '</div>');
   }
 
   /* Candidate profile: mirrors the four groups renderCandidate builds
@@ -303,7 +304,7 @@
     });
   }
 
-  // Horizontal bar chart: applicant count per role (top 10 by count), no libs.
+  // Vertical bar graph: applicant count per role (top 10 by count), no libs.
   function renderRoleChart(roles) {
     var el = $("roles-chart");
     if (!el) return;
@@ -314,17 +315,18 @@
     var top = list.slice().sort(function (a, b) { return (b.applicantCount || 0) - (a.applicantCount || 0); }).slice(0, 10);
     var max = 1;
     top.forEach(function (r) { var n = r.applicantCount || 0; if (n > max) max = n; });
-    el.innerHTML = top.map(function (r) {
+    el.innerHTML = '<div class="chart-bars">' + top.map(function (r) {
       var n = r.applicantCount || 0;
-      var pct = Math.round(n / max * 100);
+      var h = Math.round(n / max * 100);
       var label = (r.title || "Unknown role");
-      return '<div class="chart-row" title="' + esc(label) + '">' +
-        '<div class="chart-label">' + esc(label) + '</div>' +
-        '<div class="chart-track"><div class="chart-fill" style="width:' + (pct < 3 ? 3 : pct) + '%"></div></div>' +
-        '<div class="chart-num">' + n + '</div>' +
+      return '<div class="chart-bar" title="' + esc(label) + ': ' + n + '">' +
+        '<div class="bar-val">' + n + '</div>' +
+        '<div class="bar-col" style="height:' + (h < 4 ? 4 : h) + '%"></div>' +
+        '<div class="bar-lab">' + esc(label) + '</div>' +
       '</div>';
-    }).join("");
-    if (countEl && top.length < list.length) countEl.textContent = "Top " + top.length + " of " + list.length + " roles";
+    }).join("") + '</div>';
+    if (top.length > 1) el.innerHTML += '<div class="chart-legend">Applicants per role</div>';
+    if (countEl && top.length < list.length) countEl.textContent = "Top " + top.length + " of " + list.length;
     else if (countEl) countEl.textContent = list.length + " role" + (list.length === 1 ? "" : "s");
   }
 

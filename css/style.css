@@ -211,22 +211,35 @@ input, select { font-family: inherit; font-size: 14px; }
 .stat-value { font-size: 28px; font-weight: 700; margin-top: 4px; letter-spacing: -0.02em; }
 .stat-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
-/* ---------- Applicants per role bar chart ---------- */
-.roles-chart { padding: 16px 20px 18px; display: flex; flex-direction: column; gap: 9px; }
-.chart-row { display: grid; grid-template-columns: 180px 1fr 34px; align-items: center; gap: 10px; }
-.chart-label {
-  font-size: 12.5px; color: var(--text); font-weight: 500;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+/* ---------- Dashboard layout (left rail + main + right rail) ---------- */
+.dash-layout { display: flex; gap: 20px; align-items: flex-start; }
+.dash-main { flex: 1; min-width: 0; }
+.dash-rail { width: 320px; flex: none; display: flex; flex-direction: column; gap: 20px; position: sticky; top: 70px; }
+.dash-rail-left { width: 260px; }
+.rail-panel { margin-bottom: 0; }
+.rail-panel .panel-head h2 { font-size: 14px; }
+
+/* ---------- Applicants per role vertical bar graph ---------- */
+.roles-chart { padding: 16px 20px 18px; }
+.roles-chart.empty-pad { padding-top: 18px; }
+.chart-bars { display: flex; align-items: flex-end; gap: 8px; height: 160px; }
+.chart-bar { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+.chart-bar .bar-val { font-size: 12px; font-weight: 600; color: var(--text); line-height: 1; }
+.chart-bar .bar-col {
+  width: 100%; max-width: 34px; border-radius: 6px 6px 0 0;
+  background: linear-gradient(180deg, #6d8dff, var(--brand));
+  transition: height 0.4s ease; margin-top: auto;
 }
-.chart-track { background: var(--soft); border-radius: 999px; height: 14px; overflow: hidden; }
-.chart-fill {
-  height: 100%; border-radius: 999px;
-  background: linear-gradient(90deg, var(--brand), #6d8dff);
-  min-width: 3px; transition: width 0.4s ease;
+.chart-bar .bar-lab {
+  font-size: 9.5px; color: var(--muted); line-height: 1.1; text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
 }
-.chart-num { font-size: 13px; font-weight: 600; color: var(--muted); text-align: right; }
-@media (max-width: 560px) {
-  .chart-row { grid-template-columns: 120px 1fr 30px; }
+.chart-legend { margin-top: 12px; font-size: 12px; color: var(--muted); text-align: center; }
+
+@media (max-width: 1000px) {
+  .dash-layout { flex-direction: column; }
+  .dash-main { width: 100%; }
+  .dash-rail { width: 100%; position: static; }
 }
 
 /* ---------- Panels ---------- */
@@ -549,13 +562,6 @@ td .inline-loader { padding: 22px 8px; }
 .review-item .v { white-space: normal; }
 .table .pipe-review { width: 100%; min-width: 140px; padding: 6px 10px; font-size: 13px; }
 
-/* ---------- Dashboard layout (main + right rail) ---------- */
-.dash-layout { display: flex; gap: 20px; align-items: flex-start; }
-.dash-main { flex: 1; min-width: 0; }
-.dash-rail { width: 360px; flex: none; display: flex; flex-direction: column; gap: 20px; position: sticky; top: 70px; }
-.rail-panel { margin-bottom: 0; }
-.rail-panel .panel-head h2 { font-size: 14px; }
-
 /* interview list items in the rail */
 .list { padding: 8px; display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
 .list-item {
@@ -573,11 +579,6 @@ td .inline-loader { padding: 22px 8px; }
 .modal-wide { max-width: 620px; }
 .add-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
 .add-grid .field { margin-bottom: 10px; }
-
-@media (max-width: 1000px) {
-  .dash-layout { flex-direction: column; }
-  .dash-rail { width: 100%; position: static; }
-}
 
 @media (max-width: 720px) {
   .add-grid { grid-template-columns: 1fr; }
