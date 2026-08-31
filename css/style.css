@@ -211,30 +211,28 @@ input, select { font-family: inherit; font-size: 14px; }
 .stat-value { font-size: 28px; font-weight: 700; margin-top: 4px; letter-spacing: -0.02em; }
 .stat-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
-/* ---------- Dashboard layout (left rail + main + right rail) ---------- */
+/* ---------- Dashboard layout (main + right rail) ---------- */
 .dash-layout { display: flex; gap: 20px; align-items: flex-start; }
 .dash-main { flex: 1; min-width: 0; }
-.dash-rail { width: 320px; flex: none; display: flex; flex-direction: column; gap: 20px; position: sticky; top: 70px; }
-.dash-rail-left { width: 260px; }
+.dash-rail { width: 340px; flex: none; display: flex; flex-direction: column; gap: 20px; position: sticky; top: 70px; }
 .rail-panel { margin-bottom: 0; }
 .rail-panel .panel-head h2 { font-size: 14px; }
 
-/* ---------- Applicants per role vertical bar graph ---------- */
-.roles-chart { padding: 16px 20px 18px; }
-.roles-chart.empty-pad { padding-top: 18px; }
-.chart-bars { display: flex; align-items: flex-end; gap: 8px; height: 160px; }
-.chart-bar { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
-.chart-bar .bar-val { font-size: 12px; font-weight: 600; color: var(--text); line-height: 1; }
+/* ---------- Applicants per role compact vertical bar graph ---------- */
+.roles-chart { padding: 12px 16px 14px; }
+.chart-bars { display: flex; align-items: flex-end; gap: 6px; height: 120px; }
+.chart-bar { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.chart-bar .bar-val { font-size: 10.5px; font-weight: 600; color: var(--text); line-height: 1; }
 .chart-bar .bar-col {
-  width: 100%; max-width: 34px; border-radius: 6px 6px 0 0;
+  width: 100%; max-width: 26px; border-radius: 5px 5px 0 0;
   background: linear-gradient(180deg, #6d8dff, var(--brand));
   transition: height 0.4s ease; margin-top: auto;
 }
 .chart-bar .bar-lab {
-  font-size: 9.5px; color: var(--muted); line-height: 1.1; text-align: center;
+  font-size: 8.5px; color: var(--muted); line-height: 1.1; text-align: center;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
 }
-.chart-legend { margin-top: 12px; font-size: 12px; color: var(--muted); text-align: center; }
+.chart-legend { margin-top: 8px; font-size: 11px; color: var(--muted); text-align: center; }
 
 @media (max-width: 1000px) {
   .dash-layout { flex-direction: column; }
