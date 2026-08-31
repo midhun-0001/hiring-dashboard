@@ -823,6 +823,16 @@
     return null;
   }
 
+  function calendarInvitees() {
+    var out = [];
+    document.querySelectorAll("#cal-invitees .invitee-row").forEach(function (row) {
+      var name = row.querySelector(".invitee-name").value.trim();
+      var em = row.querySelector(".invitee-email").value.trim();
+      if (name || em) out.push({ name: name, email: em });
+    });
+    return out;
+  }
+
   function calendarSubmit() {
     var candidate = $("cal-candidate").value.trim();
     var role = $("cal-role").value;
@@ -837,6 +847,7 @@
       duration: $("cal-duration").value,
       interviewer: $("cal-interviewer").value.trim(),
       interviewerEmail: $("cal-interviewer-email").value.trim(),
+      invitees: calendarInvitees(),
       notes: $("cal-notes").value.trim()
     };
     if (calEditingId) {
@@ -853,6 +864,29 @@
     }
   }
 
+  function inviteeRowHTML(name, email) {
+    return '<div class="invitee-row">' +
+      '<input class="input invitee-name" type="text" placeholder="Name" value="' + esc(name || "") + '" />' +
+      '<input class="input invitee-email" type="email" placeholder="Email" value="' + esc(email || "") + '" />' +
+      '<button type="button" class="btn btn-ghost btn-sm invitee-remove" title="Remove">×</button>' +
+    '</div>';
+  }
+
+  function addInviteeRow(html) {
+    var wrap = document.createElement("div");
+    wrap.innerHTML = html;
+    var row = wrap.firstChild;
+    row.querySelector(".invitee-remove").addEventListener("click", function () { row.remove(); });
+    $("cal-invitees").appendChild(row);
+  }
+
+  function renderInvitees(participants) {
+    $("cal-invitees").innerHTML = "";
+    (participants || []).forEach(function (p) {
+      addInviteeRow(inviteeRowHTML(p.name, p.email));
+    });
+  }
+
   function openCalendarModal(id, pendingId) {
     // populate role select
     var roles = (state.dashboard && state.dashboard.roles) || [];
@@ -866,8 +900,8 @@
     calEditingId = id || null;
 
     var ev = id ? findCalEvent(id) : null;
-    var candidate = "", role = "", date = "", time = "", duration = "60", interviewer = "", email = "", meet = "", notes = "";
-    if (ev) { candidate = ev.candidate; role = ev.role || ""; date = ev.date || ""; time = ev.time || ""; duration = ev.duration || "60"; interviewer = ev.interviewer || ""; email = ev.interviewerEmail || ""; meet = ev.meet || ""; notes = ev.notes || ""; }
+    var candidate = "", role = "", date = "", time = "", duration = "60", interviewer = "", email = "", meet = "", notes = "", participants = [];
+    if (ev) { candidate = ev.candidate; role = ev.role || ""; date = ev.date || ""; time = ev.time || ""; duration = ev.duration || "60"; interviewer = ev.interviewer || ""; email = ev.interviewerEmail || ""; meet = ev.meet || ""; notes = ev.notes || ""; participants = ev.participants || []; }
 
     if (pendingId) {
       var cand = (state.allApplicants || []).filter(function (a) { return a.id === pendingId; })[0];
@@ -886,7 +920,10 @@
     $("cal-meet").readOnly = !!ev;
     $("cal-notes").value = notes;
 
+    renderInvitees(participants);
+
     $("calendar-modal").classList.remove("hidden");
+    if (participants.length === 0) addInviteeRow(inviteeRowHTML("", ""));
   }
 
   function cancelInterview() {
@@ -1074,6 +1111,7 @@
   $("cal-close-btn").addEventListener("click", closeModals);
   $("cal-cancel").addEventListener("click", cancelInterview);
   $("cal-form").addEventListener("submit", function (e) { e.preventDefault(); calendarSubmit(); });
+  $("cal-add-invitee").addEventListener("click", function () { addInviteeRow(inviteeRowHTML("", "")); });
 
   /* ---------------- add candidate ---------------- */
 

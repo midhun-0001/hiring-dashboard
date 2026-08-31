@@ -68,7 +68,7 @@ var SETTINGS = {
   //             I Meet Link | J Status (active/cancelled) | K Notes
   INTERVIEWS_COLS: {
     eventId:0, candidate:1, role:2, date:3, time:4, duration:5,
-    interviewer:6, interviewerEmail:7, meet:8, status:9, notes:10
+    interviewer:6, interviewerEmail:7, meet:8, status:9, notes:10, participants:11
   }
 };
 
@@ -433,12 +433,14 @@ function readInterviews_() {
   if (!sh) return out;
   var lastRow = sh.getLastRow();
   if (lastRow < 1) return out;
-  var lastCol = Math.min(sh.getLastColumn(), 11);
+  var lastCol = Math.min(sh.getLastColumn(), 12);
   var data = sh.getRange(1, 1, lastRow, lastCol).getValues();
   var C = SETTINGS.INTERVIEWS_COLS;
   for (var i = 1; i < data.length; i++) {
     var r = data[i];
     if (!norm_(r[C.eventId]) && !norm_(r[C.candidate])) continue;
+    var parts = [];
+    try { parts = JSON.parse(norm_(r[C.participants]) || "[]") || []; } catch (e) { parts = []; }
     out.push({
       eventId: norm_(r[C.eventId]),
       candidate: norm_(r[C.candidate]),
@@ -448,6 +450,7 @@ function readInterviews_() {
       duration: parseInt(r[C.duration], 10) || 60,
       interviewer: norm_(r[C.interviewer]),
       interviewerEmail: norm_(r[C.interviewerEmail]),
+      participants: parts,
       meet: norm_(r[C.meet]),
       status: norm_(r[C.status]).toLowerCase() === "cancelled" ? "cancelled" : "active",
       notes: norm_(r[C.notes]),
@@ -468,13 +471,15 @@ function saveInterviewRow_(ev) {
   if (!sh) sh = ss_().insertSheet(SETTINGS.INTERVIEWS_TAB_NAME);
   // ensure a header exists
   if (sh.getLastRow() < 1) {
-    sh.getRange(1, 1, 1, 11).setValues([[
+    sh.getRange(1, 1, 1, 12).setValues([[
       "Calendar Event ID","Candidate","Role","Date","Time","Duration (min)",
-      "Interviewer Name","Interviewer Email","Meet Link","Status","Notes"
+      "Interviewer Name","Interviewer Email","Meet Link","Status","Notes","Participants"
     ]]);
+  } else if (sh.getLastColumn() < 12) {
+    sh.getRange(1, 12, 1, 1).setValues([["Participants"]]);
   }
   var C = SETTINGS.INTERVIEWS_COLS;
-  var row = ["", "", "", "", "", "", "", "", "", "", ""];
+  var row = ["", "", "", "", "", "", "", "", "", "", "", ""];
   row[C.eventId] = ev.eventId;
   row[C.candidate] = ev.candidate;
   row[C.role] = ev.role;
@@ -486,10 +491,11 @@ function saveInterviewRow_(ev) {
   row[C.meet] = ev.meet;
   row[C.status] = ev.status;
   row[C.notes] = ev.notes;
+  row[C.participants] = JSON.stringify(ev.participants || []);
   if (ev.row) {
-    sh.getRange(ev.row, 1, 1, 11).setValues([row]);
+    sh.getRange(ev.row, 1, 1, 12).setValues([row]);
   } else {
-    sh.getRange(sh.getLastRow() + 1, 1, 1, 11).setValues([row]);
+    sh.getRange(sh.getLastRow() + 1, 1, 1, 12).setValues([row]);
   }
   return ev;
 }
@@ -518,9 +524,11 @@ function createCalendarEvent_(p) {
   var end = new Date(start.getTime() + dur * 60000);
   var cal = cal_();
   var opts = {};
-  var guest = norm_(p.interviewerEmail || p.interviewer);
-  if (guest) {
-    try { opts.guests = guest; opts.sendInvites = false; } catch (e2) {}
+  // Participants = the roll-up of the old single interviewer + the expandable
+  // invitee list. Build one comma-separated guest string for CalendarApp.
+  var parts = participantEmails_(p);
+  if (parts.length) {
+    try { opts.guests = parts.join(","); opts.sendInvites = false; } catch (e2) {}
   }
   var event = cal.createEvent(title, start, end, opts);
   var meet = meetLink_(event);
@@ -533,12 +541,58 @@ function createCalendarEvent_(p) {
     duration: dur,
     interviewer: norm_(p.interviewer),
     interviewerEmail: norm_(p.interviewerEmail),
+    participants: participants_(p),
     meet: meet,
     status: "active",
     notes: norm_(p.notes)
   };
   return saveInterviewRow_(ev);
 }
+
+// Normalize the invitee list parameter: may arrive as an array, or as a JSON
+// string (from the frontend query string). Returns an array of {name, email}.
+function parseInvitees_(inv) {
+  if (!inv) return [];
+  if (typeof inv === "string") {
+    var s = inv.trim();
+    if (!s) return [];
+    if (s.charAt(0) === "[") {
+      try { return JSON.parse(s) || []; } catch (e) { return []; }
+    }
+    return s.split(",").map(function (x) { return { name: x.trim(), email: "" }; });
+  }
+  if (inv.map) return inv;
+  return [inv];
+}
+
+// Gather the participant invite emails: the interviewer email field plus any
+// emails from the expandable "invitee" list, de-duplicated and non-empty.
+function participantEmails_(p) {
+  var seen = {};
+  var out = [];
+  function push(e) {
+    var em = norm_(e).trim().toLowerCase();
+    if (em && !seen[em]) { seen[em] = true; out.push(norm_(e).trim()); }
+  }
+  push(p.interviewerEmail);
+  parseInvitees_(p.invitees).forEach(function (x) {
+    if (x && typeof x.email === "string") push(x.email);
+  });
+  return out;
+}
+
+// Structured participant list (name + email) persisted to the sheet.
+function participants_(p) {
+  var out = [];
+  if (norm_(p.interviewer)) {
+    out.push({ name: norm_(p.interviewer), email: norm_(p.interviewerEmail) });
+  }
+  parseInvitees_(p.invitees).forEach(function (x) {
+    if (x && norm_(x.name)) out.push({ name: norm_(x.name), email: norm_(x.email) });
+  });
+  return out;
+}
+
 
 function updateCalendarEvent_(p) {
   var id = p.id || p.eventId || "";
@@ -553,6 +607,19 @@ function updateCalendarEvent_(p) {
       if (start) event.setTime(start, new Date(start.getTime() + (parseInt(p.duration, 10) || ev.duration) * 60000));
     }
     if (norm_(p.candidate) || norm_(p.role)) event.setTitle(norm_(p.candidate || ev.candidate) + (norm_(p.role || ev.role) ? " - " + norm_(p.role || ev.role) : ""));
+    // Sync participant invites: add new, remove missing.
+    if (p.invitees !== undefined || p.interviewerEmail !== undefined) {
+      var want = participantEmails_(p);
+      var haveMap = {};
+      var guests = event.getGuestList(true);
+      for (var gi = 0; gi < guests.length; gi++) {
+        haveMap[String(guests[gi].getEmail()).toLowerCase()] = guests[gi];
+      }
+      var wantMap = {};
+      want.forEach(function (em) { wantMap[em.toLowerCase()] = em; });
+      Object.keys(wantMap).forEach(function (k) { if (!haveMap[k]) { try { event.addGuest(wantMap[k]); } catch (e3) {} } });
+      Object.keys(haveMap).forEach(function (k) { if (!wantMap[k]) { try { event.removeGuest(haveMap[k].getEmail()); } catch (e4) {} } });
+    }
   }
   // update the sheet reference row
   var merged = {
@@ -564,6 +631,7 @@ function updateCalendarEvent_(p) {
     duration: parseInt(p.duration, 10) || ev.duration,
     interviewer: norm_(p.interviewer === undefined ? ev.interviewer : p.interviewer),
     interviewerEmail: norm_(p.interviewerEmail === undefined ? ev.interviewerEmail : p.interviewerEmail),
+    participants: p.invitees !== undefined ? participants_(p) : (ev.participants || []),
     meet: ev.meet,
     status: ev.status,
     notes: norm_(p.notes === undefined ? ev.notes : p.notes),

@@ -284,6 +284,13 @@
           <label class="field"><span>Interviewer email</span><input id="cal-interviewer-email" class="input" type="email" /></label>
           <label class="field"><span>Meet link</span><input id="cal-meet" class="input" type="text" placeholder="auto from Google Meet, or paste" /></label>
         </div>
+        <div class="invitees-block">
+          <div class="invitees-head">
+            <span class="invitees-title">Other participants (invite 2–3 panelists)</span>
+            <button type="button" id="cal-add-invitee" class="btn btn-sm btn-ghost">+ Add invitee</button>
+          </div>
+          <div id="cal-invitees"></div>
+        </div>
         <label class="field"><span>Notes</span><textarea id="cal-notes" class="input" rows="2"></textarea></label>
         <div class="modal-actions">
           <button type="button" id="cal-cancel" class="btn btn-danger">Cancel Interview</button>

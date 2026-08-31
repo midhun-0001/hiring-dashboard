@@ -122,6 +122,7 @@ var API = (function () {
       if (f.duration) p.duration = f.duration;
       if (f.interviewer) p.interviewer = f.interviewer;
       if (f.interviewerEmail) p.interviewerEmail = f.interviewerEmail;
+      if (f.invitees && f.invitees.length) p.invitees = JSON.stringify(f.invitees);
       if (f.notes) p.notes = f.notes;
       return call(p);
     },
@@ -132,6 +133,7 @@ var API = (function () {
       if (f.duration) p.duration = f.duration;
       if (f.interviewer) p.interviewer = f.interviewer;
       if (f.interviewerEmail) p.interviewerEmail = f.interviewerEmail;
+      if (f.invitees) p.invitees = JSON.stringify(f.invitees);
       if (f.notes) p.notes = f.notes;
       return call(p);
     },
