@@ -96,6 +96,61 @@
       (msg ? '<span class="inline-loader-msg">' + esc(msg) + '</span>' : '') + '</div>';
   }
 
+  /* ---------------- skeleton loaders ----------------
+     Content-shaped placeholders for the landing page, so the stats row,
+     roles grid and rail lists animate while the dashboard fetch is in
+     flight instead of sitting empty. Cleared by the normal render calls. */
+
+  function rep(n, html) {
+    var out = "";
+    for (var i = 0; i < n; i++) out += html;
+    return out;
+  }
+
+  function skelOn(el, html) {
+    if (!el) return;
+    el.classList.add("skel-stagger");
+    el.innerHTML = html;
+  }
+  function skelOff(el) {
+    if (el) el.classList.remove("skel-stagger");
+  }
+
+  function skeletonStats() {
+    skelOn($("stats"), rep(3,
+      '<div class="stat-card skel-stat">' +
+        '<div class="skel skel-line short"></div>' +
+        '<div class="skel skel-line tall mid"></div>' +
+      '</div>'));
+  }
+
+  function skeletonRoles(id, n) {
+    skelOn($(id), rep(n || 6,
+      '<div class="skel-role">' +
+        '<div class="skel-role-head">' +
+          '<div class="skel skel-line long"></div>' +
+          '<div class="skel skel-badge"></div>' +
+        '</div>' +
+        '<div class="skel skel-line short"></div>' +
+        '<div class="skel-role-meta">' +
+          '<div class="skel skel-tag w1"></div>' +
+          '<div class="skel skel-tag w2"></div>' +
+          '<div class="skel skel-tag w3"></div>' +
+        '</div>' +
+      '</div>'));
+  }
+
+  function skeletonList(id, n) {
+    skelOn($(id), rep(n || 3,
+      '<div class="skel-list-item">' +
+        '<div class="li-left">' +
+          '<div class="skel skel-line long"></div>' +
+          '<div class="skel skel-line short"></div>' +
+        '</div>' +
+        '<div class="skel skel-badge"></div>' +
+      '</div>'));
+  }
+
   /* ---------------- config / banner ---------------- */
 
   function hideLoading() {
@@ -146,10 +201,14 @@
 
   function loadDashboard() {
     showRoleLoader();
-    inlineLoading($("roles-grid"), "Loading roles…");
-    inlineLoading($("roles-grid-2"), "Loading roles…");
-    inlineLoading($("dashboard-upcoming"), "Loading interviews…");
-    inlineLoading($("dashboard-completed"), "Loading interviews…");
+    skeletonStats();
+    skeletonRoles("roles-grid", 6);
+    skeletonRoles("roles-grid-2", 6);
+    skeletonList("dashboard-upcoming", 3);
+    skeletonList("dashboard-completed", 3);
+    // Let the branded overlay play briefly, then hand off to the skeletons
+    // so a slow fetch shows the page taking shape instead of a blank screen.
+    setTimeout(hideLoading, 900);
     API.dashboard().then(function (data) {
       state.dashboard = data;
       renderStats(data.stats);
@@ -167,6 +226,7 @@
       hideLoading();
       hideRoleLoader();
       renderStats({ openRoles: 0, closedRoles: 0, totalApplicants: 0 });
+      ["roles-grid", "roles-grid-2", "dashboard-upcoming", "dashboard-completed"].forEach(function (id) { skelOff($(id)); });
       $("roles-grid").innerHTML = '<div class="empty">Could not load roles.</div>';
       $("roles-grid-2").innerHTML = '<div class="empty">Could not load roles.</div>';
       $("dashboard-upcoming").innerHTML = '<div class="empty">Could not load interviews.</div>';
@@ -203,6 +263,7 @@
       { label: "Closed Roles", value: s.closedRoles || 0, color: "var(--muted)" },
       { label: "Total Applicants", value: s.totalApplicants || 0, color: "var(--brand)" }
     ];
+    skelOff($("stats"));
     $("stats").innerHTML = cards.map(function (c) {
       return '<div class="stat-card"><div class="stat-label">' + c.label + '</div>' +
         '<div class="stat-value" style="color:' + c.color + '">' + c.value + '</div></div>';
@@ -213,6 +274,7 @@
 
   function renderRoles(containerId, roles) {
     var el = $(containerId);
+    skelOff(el);
     if (!roles || !roles.length) { el.innerHTML = '<div class="empty">No roles found in the Roles tab.</div>'; return; }
     el.innerHTML = roles.map(function (r) {
       var oc = openClose(r.status);
@@ -290,6 +352,7 @@
 
     // Upcoming in the right rail
     var upEl = $("dashboard-upcoming");
+    skelOff(upEl);
     if (!upcoming.length) {
       upEl.innerHTML = '<div class="empty">No confirmed upcoming interviews.</div>';
     } else {
@@ -307,6 +370,7 @@
 
     // Latest completed (past 5) below it
     var coEl = $("dashboard-completed");
+    skelOff(coEl);
     if (!completed.length) {
       coEl.innerHTML = '<div class="empty">No completed applicants yet.</div>';
     } else {

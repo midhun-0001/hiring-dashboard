@@ -37,6 +37,10 @@
   --active-tab-text: #2563eb;
   --card-border-hover: #c7d2fe;
   --schedule-board: #f7f8fb;
+
+  /* skeleton placeholder base + shimmer highlight */
+  --skel: #e8eaf0;
+  --skel-hi: rgba(255, 255, 255, 0.85);
 }
 
 /* ---------- Dark mode ---------- */
@@ -69,6 +73,9 @@ html[data-theme="dark"] {
   --active-tab-text: #8ab4f8;
   --card-border-hover: #2f4d7a;
   --schedule-board: #1c2028;
+
+  --skel: #232833;
+  --skel-hi: rgba(255, 255, 255, 0.07);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -347,6 +354,66 @@ input, select { font-family: inherit; font-size: 14px; }
 }
 .inline-loader-msg { white-space: nowrap; }
 td .inline-loader { padding: 22px 8px; }
+
+/* ---------- Skeleton loaders (landing page placeholders) ----------
+   Content-shaped grey blocks with a shimmer sweep, shown while the
+   dashboard fetch is in flight so the layout never sits empty. */
+.skel {
+  position: relative; overflow: hidden;
+  background: var(--skel);
+  border-radius: 6px;
+}
+.skel::after {
+  content: "";
+  position: absolute; inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, var(--skel-hi), transparent);
+  animation: skel-sweep 1.4s ease-in-out infinite;
+}
+@keyframes skel-sweep { to { transform: translateX(100%); } }
+
+/* line heights */
+.skel-line { height: 11px; }
+.skel-line.tall { height: 26px; }
+.skel-line.short { width: 40%; }
+.skel-line.mid { width: 62%; }
+.skel-line.long { width: 85%; }
+
+/* stat card placeholder: reuses .stat-card box so spacing matches the real thing */
+.skel-stat { display: flex; flex-direction: column; gap: 10px; }
+
+/* role card placeholder */
+.skel-role {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px; background: var(--surface);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.skel-role-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.skel-role-head .skel-line { flex: 1; }
+.skel-badge { height: 18px; width: 56px; border-radius: 999px; flex: none; }
+.skel-role-meta { display: flex; gap: 6px; border-top: 1px dashed var(--border); padding-top: 10px; }
+.skel-tag { height: 18px; border-radius: 6px; }
+.skel-tag.w1 { width: 64px; }
+.skel-tag.w2 { width: 48px; }
+.skel-tag.w3 { width: 56px; }
+
+/* rail list item placeholder */
+.skel-list-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+}
+.skel-list-item .li-left { flex: 1; display: flex; flex-direction: column; gap: 7px; }
+
+/* Staggered starts so the shimmer reads as a wave, not one flat pulse. */
+.skel-stagger > *:nth-child(2) .skel::after { animation-delay: 0.12s; }
+.skel-stagger > *:nth-child(3) .skel::after { animation-delay: 0.24s; }
+.skel-stagger > *:nth-child(4) .skel::after { animation-delay: 0.36s; }
+.skel-stagger > *:nth-child(5) .skel::after { animation-delay: 0.48s; }
+.skel-stagger > *:nth-child(6) .skel::after { animation-delay: 0.60s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .skel::after { animation: none; }
+}
 
 @media (max-width: 720px) {
   .stats-grid { grid-template-columns: 1fr; }

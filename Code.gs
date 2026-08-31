@@ -44,11 +44,16 @@
 
 var SETTINGS = {
   ROLES_TAB_NAME: "Roles",
+  // All applicants live in ONE tab. Every row carries a "Role" column (index 16),
+  // so no more reading one sheet per role. Role names in this column should match
+  // the Roles tab titles (matching is fuzzy / case-insensitive).
+  APP_TAB_NAME: "Applicants",
   ROLES_COLS: { id:0, title:1, department:2, status:3, approvalStage:4, interviewKit:5, approvalOwner:6 },
   APP_COLS: {
     applicantId:0, name:1, email:2, phone:3, position:4, resume:5,
     experience:6, ctc:7, priority:8, status:9, time:10,
-    reviewAnisha:11, review1:12, review2:13, review3:14, review4:15
+    reviewAnisha:11, review1:12, review2:13, review3:14, review4:15,
+    role:16
   },
   // Google Calendar / interview scheduling. CALENDAR_ID empty -> the Apps
   // Script account's default calendar is used. Events are referenced from a
@@ -113,18 +118,6 @@ function cacheClear_() {
 }
 
 /* ============================================================
- * Tab discovery - every sheet except "Roles" is an applicant tab
- * ============================================================ */
-
-function roleTabs_() {
-  var all = ss_().getSheets();
-  return all.filter(function (sh) {
-    var n = sh.getName();
-    return n !== SETTINGS.ROLES_TAB_NAME && n !== SETTINGS.INTERVIEWS_TAB_NAME;
-  });
-}
-
-/* ============================================================
  * Field-name resolution
  * ============================================================ */
 
@@ -170,18 +163,20 @@ function readRoles_() {
 }
 
 /* ============================================================
- * Applicant tabs
+ * Applicant single-tab
  * ============================================================ */
 
-// Map one raw row -> applicant object with meta.
-function mapApplicant_(row, tab, title) {
+// Map one raw row -> applicant object with meta. `role` comes from the
+// "Role" column (index 16); if a row has its own position text it is kept.
+function mapApplicant_(row) {
   var C = SETTINGS.APP_COLS;
+  var role = norm_(row[C.role]);
   return {
     id: norm_(row[C.applicantId]),
     name: norm_(row[C.name]),
     email: norm_(row[C.email]),
     phone: norm_(row[C.phone]),
-    position: norm_(row[C.position]) || title,
+    position: norm_(row[C.position]) || role,
     resume: norm_(row[C.resume]),
     experience: norm_(row[C.experience]),
     ctc: norm_(row[C.ctc]),
@@ -193,23 +188,23 @@ function mapApplicant_(row, tab, title) {
     review2: norm_(row[C.review2]),
     review3: norm_(row[C.review3]),
     review4: norm_(row[C.review4]),
-    tab: tab,
-    roleTitle: title || tab
+    tab: SETTINGS.APP_TAB_NAME,
+    role: role,
+    roleTitle: role
   };
 }
 
-// All applicants for one tab (row numbers preserved for updates).
-function readTab_(tab) {
-  var sh = ss_().getSheetByName(tab);
+// Read the single "Applicants" tab (row numbers preserved for updates).
+function readApplicants_() {
+  var sh = ss_().getSheetByName(SETTINGS.APP_TAB_NAME);
   var out = [];
   if (!sh) return out;
-  var cleanTitle = roleTitleForTab_(tab);
   var lastRow = sh.getLastRow();
   if (lastRow < 1) return out;
   var lastCol = sh.getLastColumn();
   var data = sh.getRange(1, 1, lastRow, lastCol).getValues();
   for (var i = 1; i < data.length; i++) {
-    var a = mapApplicant_(data[i], tab, cleanTitle);
+    var a = mapApplicant_(data[i]);
     if (!a.name && !a.id) continue; // skip fully-blank rows
     a.row = i + 1; // real sheet row (row 1 = header)
     out.push(a);
@@ -217,17 +212,21 @@ function readTab_(tab) {
   return out;
 }
 
-// Role title lookup by tab name (fall back to tab name). Matches by Role ID
-// first, then by fuzzy-normalized title so tabs like "Satellite Systems
-// Engineer (Responses)" map to the clean "Satellite Systems Engineer" role.
-function roleTitleForTab_(tab) {
+// Backward-compat alias (tab is ignored - there is a single Applicants tab).
+function readTab_(tab) { return readApplicants_(); }
+
+// Resolve a role name (title, id, or tab-like name) to a Roles-tab title,
+// falling back to the raw input. Matching is fuzzy / case-insensitive.
+function resolveRoleTitle_(role) {
   var roles = readRoles_();
-  var found = null;
-  roles.forEach(function (r) {
-    if (!found && r.id && norm_(r.id).toLowerCase() === norm_(tab).toLowerCase()) found = r.title;
-    if (!found && normTitle_(r.title) === normTitle_(tab)) found = r.title;
-  });
-  return found || tab;
+  var s = norm_(role);
+  if (!s) return "";
+  for (var i = 0; i < roles.length; i++) {
+    var r = roles[i];
+    if (norm_(r.id).toLowerCase() === s.toLowerCase()) return r.title;
+    if (normTitle_(r.title) === normTitle_(s)) return r.title;
+  }
+  return s;
 }
 
 /* ============================================================
@@ -287,48 +286,19 @@ function extractDate_(s) {
  * Aggregation
  * ============================================================ */
 
-function allTabs_(roles) {
-  var tabs = roleTabs_();
-  var result = [];
-  tabs.forEach(function (sh) {
-    var tab = sh.getName();
-    var title = null;
-    roles.forEach(function (r) {
-      if (!title && r.id && norm_(r.id).toLowerCase() === norm_(tab).toLowerCase()) title = r.title;
-      if (!title && normTitle_(r.title) === normTitle_(tab)) title = r.title;
-    });
-    result.push({ tab: tab, title: title || tab });
-  });
-  return result;
-}
-
-// Only the tabs that correspond to a role in `roles` (by normalized name/ID).
-// Used so a non-HR user (whose `roles` list is already filtered) never reads
-// tabs belonging to roles they were not assigned.
-function tabsForRoles_(roles) {
-  return allTabs_(roles).filter(function (t) {
-    return roles.some(function (r) {
-      return normTitle_(r.title) === normTitle_(t.tab) ||
-             (r.id && norm_(r.id).toLowerCase() === norm_(t.tab).toLowerCase());
-    });
-  });
-}
-
-// Attach applicantCount to each role from its matching tab (count *all* rows
-// with at least a name), even if the tab isn't in the Roles tab list.
+// Attach applicantCount to each role from the single Applicants tab
+// (count rows whose Role column matches the role title).
 function withCounts_(roles) {
-  var tabs = tabsForRoles_(roles);
-  var counts = {};
-  var tabTitles = {};
-  tabs.forEach(function (t) { counts[t.tab] = readTab_(t.tab).length; tabTitles[t.tab] = t.title; });
+  var all = readApplicants_();
   roles.forEach(function (r) {
-    var key = null;
-    tabs.forEach(function (t) {
-      if (!key && normTitle_(t.tab) === normTitle_(r.title)) key = t.tab;
-      if (!key && r.id && norm_(t.tab).toLowerCase() === norm_(r.id).toLowerCase()) key = t.tab;
-    });
-    r.applicantCount = key ? counts[key] : 0;
-    r.tab = key || r.title;
+    var n = 0;
+    for (var j = 0; j < all.length; j++) {
+      var a = all[j];
+      if ((normTitle_(a.roleTitle) === normTitle_(r.title)) ||
+          (r.id && norm_(a.roleTitle).toLowerCase() === norm_(r.id).toLowerCase())) n++;
+    }
+    r.applicantCount = n;
+    r.tab = r.title;
   });
   return roles;
 }
@@ -411,16 +381,7 @@ function firstReview_(a) {
 }
 
 function allApplicants_(roles) {
-  var all = [];
-  tabsForRoles_(roles).forEach(function (t) {
-    readTab_(t.tab).forEach(function (a) {
-      // roleTitle = the CLEAN role title (from the Roles tab mapping).
-      // If a tab isn't in the Roles master list, fall back to the tab name.
-      a.roleTitle = t.title || a.tab;
-      all.push(a);
-    });
-  });
-  return all;
+  return readApplicants_();
 }
 
 /* ============================================================
@@ -430,20 +391,18 @@ function allApplicants_(roles) {
 var FIELD_MAP = {
   status: "J", priority: "I", time: "K", ctc: "H", experience: "G",
   reviewAnisha: "L", review1: "M", review2: "N", review3: "O", review4: "P",
-  name: "B", email: "C", phone: "D", position: "E", resume: "F"
+  name: "B", email: "C", phone: "D", position: "E", resume: "F",
+  role: "Q"
 };
 
-// Find the applicant row by Applicant ID (case-insensitive) across all tabs,
-// or within a given tab if provided. Returns {tab, row} or null.
+// Find the applicant row by Applicant ID (case-insensitive) in the single
+// Applicants tab. Returns {tab, row} or null (tab is always the Applicants tab).
 function locateApplicant_(id, preferredTab) {
   if (!id) return null;
-  var tabs = preferredTab ? [{ tab: preferredTab }] : allTabs_(readRoles_());
-  for (var i = 0; i < tabs.length; i++) {
-    var list = readTab_(tabs[i].tab);
-    for (var j = 0; j < list.length; j++) {
-      if (norm_(list[j].id).toLowerCase() === norm_(id).toLowerCase()) {
-        return { tab: tabs[i].tab, row: list[j].row };
-      }
+  var list = readApplicants_();
+  for (var j = 0; j < list.length; j++) {
+    if (norm_(list[j].id).toLowerCase() === norm_(id).toLowerCase()) {
+      return { tab: SETTINGS.APP_TAB_NAME, row: list[j].row };
     }
   }
   return null;
@@ -661,10 +620,10 @@ function doGet(e) {
       return json_({ applicants: allApplicants_(readRoles_()) });
 
     } else if (action === "roleapplicants") {
-      var role = p.role || p.title || "";
-      var tab = tabForRole_(role);
-      if (!tab) return json_({ role: role, applicants: [] });
-      return json_({ role: role, tab: tab, applicants: readTab_(tab) });
+      var role = resolveRoleTitle_(p.role || p.title || "");
+      var rlist = allApplicants_(readRoles_());
+      var rmatched = rlist.filter(function (a) { return normTitle_(a.roleTitle) === normTitle_(role); });
+      return json_({ role: role, tab: SETTINGS.APP_TAB_NAME, applicants: rmatched });
 
     } else if (action === "candidate") {
       var id = p.id || "";
@@ -698,12 +657,12 @@ function doGet(e) {
 
     } else if (action === "addapplicant") {
       cacheClear_();
-      var arole = p.role || "";
-      var atab = tabForRole_(arole);
-      if (!atab) throw new Error("no applicant sheet found for role: " + arole);
-      var ash = ss_().getSheetByName(atab);
+      var arole = resolveRoleTitle_(p.role || "");
+      var ash = ss_().getSheetByName(SETTINGS.APP_TAB_NAME);
+      if (!ash) throw new Error("no Applicants tab found");
+      p.role = arole;
       var data = addApplicant_(ash, p);
-      return json_({ ok: true, tab: atab, row: data.row, id: data.id, applicant: data.applicant });
+      return json_({ ok: true, tab: SETTINGS.APP_TAB_NAME, row: data.row, id: data.id, applicant: data.applicant });
 
     } else if (action === "deletecandidate") {
       cacheClear_();
@@ -746,49 +705,27 @@ function doGet(e) {
 }
 
 function findInTab_(tab, id) {
-  var list = readTab_(tab);
-  for (var j = 0; j < list.length; j++) {
-    if (norm_(list[j].id).toLowerCase() === norm_(id).toLowerCase()) return { tab: tab, row: list[j].row };
-  }
-  return null;
+  return locateApplicant_(id); // single Applicants tab; `tab` is ignored
 }
 
 function tabForRole_(role) {
-  var roles = readRoles_();
-  var title = null;
-  roles.forEach(function (r) {
-    if (!title && (norm_(r.title) === norm_(role) || normTitle_(r.title) === normTitle_(role))) title = r.title;
-    if (!title && r.id && norm_(r.id).toLowerCase() === norm_(role).toLowerCase()) title = r.title;
-  });
-  if (!title) title = role; // role param may itself be a tab name
-  // find an actual sheet whose (normalized) name matches the role title
-  var sheets = roleTabs_();
-  var match = null;
-  sheets.forEach(function (sh) {
-    var n = sh.getName();
-    if (!match && normTitle_(n) === normTitle_(title)) match = n;
-    if (!match && norm_(n).toLowerCase() === norm_(title).toLowerCase()) match = n;
-  });
-  return match;
+  return resolveRoleTitle_(role);
 }
 
-// Generate the next Applicant ID across all tabs: max existing numeric suffix + 1.
+// Generate the next Applicant ID: max existing numeric suffix + 1.
 function nextApplicantId_() {
-  var roles = readRoles_();
   var max = 0;
-  allTabs_(roles).forEach(function (t) {
-    readTab_(t.tab).forEach(function (a) {
-      var m = norm_(a.id).match(/app?\s*(\d+)/i);
-      if (m) { var n = parseInt(m[1], 10); if (n > max) max = n; }
-    });
+  readApplicants_().forEach(function (a) {
+    var m = norm_(a.id).match(/app?\s*(\d+)/i);
+    if (m) { var n = parseInt(m[1], 10); if (n > max) max = n; }
   });
   return "APP" + pad2_(max + 1);
 }
 
-// Append a new applicant row to the given applicant sheet.
+// Append a new applicant row to the single Applicants tab.
 function addApplicant_(sh, p) {
   var C = SETTINGS.APP_COLS;
-  var row = ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
+  var row = ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
   row[C.applicantId] = norm_(p.app && p.app.id ? p.app.id : nextApplicantId_());
   row[C.name] = norm_(p.name);
   row[C.email] = norm_(p.email);
@@ -805,9 +742,10 @@ function addApplicant_(sh, p) {
   row[C.review2] = norm_(p.review2);
   row[C.review3] = norm_(p.review3);
   row[C.review4] = norm_(p.review4);
+  row[C.role] = norm_(p.role);
   var newRow = sh.getLastRow() + 1;
-  sh.getRange(newRow, 1, 1, 16).setValues([row]);
-  var applicant = mapApplicant_(row, sh.getName(), roleTitleForTab_(sh.getName()));
+  sh.getRange(newRow, 1, 1, 17).setValues([row]);
+  var applicant = mapApplicant_(row);
   applicant.row = newRow;
   return { row: newRow, id: row[C.applicantId], applicant: applicant };
 }
