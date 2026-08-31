@@ -10,7 +10,7 @@
  *
  * ROLES TAB COLUMNS
  *   A Role ID | B Role Title | C Department | D Status (Open/Closed)
- *   E Approval Stage | F Interview Kit | G Approval Owner
+ *   E Assigned to
  *
  * APPLICANT TAB COLUMNS (single "Applicants" tab)
  *   A Applicant ID | B Full Name | C Email ID | D Phone Number
@@ -48,7 +48,7 @@ var SETTINGS = {
   // from the "Position Applied For" column (E) - Role column (index 16) may
   // exist but is ignored/no longer required. Matching is fuzzy/insensitive.
   APP_TAB_NAME: "Applicants",
-  ROLES_COLS: { id:0, title:1, department:2, status:3, approvalStage:4, interviewKit:5, approvalOwner:6 },
+  ROLES_COLS: { id:0, title:1, department:2, status:3, assignedTo:4 },
   APP_COLS: {
     applicantId:0, name:1, email:2, phone:3, position:4, resume:5,
     experience:6, ctc:7, priority:8, status:9, time:10,
@@ -57,7 +57,11 @@ var SETTINGS = {
   // Google Calendar / interview scheduling. CALENDAR_ID empty -> the Apps
   // Script account's default calendar is used. Events are referenced from a
   // dedicated "Interviews" tab (source of truth for scheduled interviews).
-  INTERVIEWS_TAB_NAME: "Interviews",
+  // NOTE: must NOT be an existing data tab. The sheet's "Interviews" tab holds
+  // a copy of the applicant data, and saveInterviewRow_ writes the 11-column
+  // calendar-event schema below - pointing at it would overwrite applicants.
+  // This tab is created on demand with the correct header.
+  INTERVIEWS_TAB_NAME: "Interview Events",
   CALENDAR_ID: "",
   // Events tab: A Calendar Event ID | B Candidate | C Role | D Date | E Time
   //             F Duration (min) | G Interviewer Name | H Interviewer Email
@@ -140,7 +144,7 @@ function readRoles_() {
   if (!sh) return [];
   var lastRow = sh.getLastRow();
   if (lastRow < 1) return [];
-  var lastCol = Math.min(sh.getLastColumn(), 7);
+  var lastCol = Math.min(sh.getLastColumn(), 5);
   var data = sh.getRange(1, 1, lastRow, lastCol).getValues();
   var C = SETTINGS.ROLES_COLS;
   var out = [];
@@ -148,14 +152,15 @@ function readRoles_() {
     var r = data[i];
     var title = norm_(r[C.title]);
     if (!title) continue;
+    var owner = norm_(r[C.assignedTo]) || "(none)";
     out.push({
       id: norm_(r[C.id]),
       title: title,
       department: norm_(r[C.department]),
       status: norm_(r[C.status]).toLowerCase() === "closed" ? "closed" : "open",
-      approvalStage: norm_(r[C.approvalStage]) || "(none)",
-      interviewKit: isYes_(r[C.interviewKit]) ? "Complete" : "Incomplete",
-      approvalOwner: norm_(r[C.approvalOwner])
+      assignedTo: owner,
+      // kept for older clients that still read approvalStage
+      approvalStage: owner
     });
   }
   return out;

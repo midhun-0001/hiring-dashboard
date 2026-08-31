@@ -313,7 +313,7 @@
         '</div><span class="badge ' + oc.cls + '">' + oc.label + '</span></div>' +
         '<div class="role-meta">' +
           '<span class="role-meta-tag"><strong>' + (r.applicantCount || 0) + '</strong> applicants</span>' +
-          '<span class="role-meta-tag">Approval: ' + esc(r.approvalStage) + '</span>' +
+          '<span class="role-meta-tag">Assigned to: ' + esc(r.assignedTo || r.approvalStage) + '</span>' +
         '</div></div>';
     }).join("");
     el.querySelectorAll(".role-card").forEach(function (card) {
@@ -337,7 +337,7 @@
       '<span>Status: ' + oc.label + '</span>' +
       '<span>Department: ' + esc(role.department) + '</span>' +
       '<span>Applicants: ' + (role.applicantCount || 0) + '</span>' +
-      '<span>Approval: ' + esc(role.approvalStage) + '</span>';
+      '<span>Assigned to: ' + esc(role.assignedTo || role.approvalStage) + '</span>';
     goView("role-detail");
     inlineLoading($("pipeline"), "Loading applicants…");
     API.roleApplicants(title).then(function (data) {

@@ -28,15 +28,15 @@ data** and **no hard-coded** roles.
 
 ### `Roles` tab
 
-| A | B | C | D | E | F |
-|---|---|---|---|---|---|
-| Role ID | Role Title | Department | Status | Approval Stage | Interview Kit |
-| R001 | Satellite Systems Engineer | Engineering | Open | Approved | Complete |
-| R002 | Mechanical Engineering Lead | Engineering | Open | Approved | Complete |
+| A | B | C | D | E |
+|---|---|---|---|---|
+| Role ID | Role Title | Department | Status | Assigned to |
+| R001 | Satellite Systems Engineer | Engineering | Open | Palaniappan |
+| R002 | Mechanical Engineering Lead | Engineering | Open | Akshanth |
 
 - `D Status` = `Open` or `Closed` → drives the Open/Closed card color and counts.
-- `B Role Title` = the name of that role's applicant tab.
-- `F Interview Kit` (Complete/Incomplete) is no longer shown in the UI.
+- `B Role Title` = matched against each applicant's `Position Applied For`.
+- `E Assigned to` shows on the role card and in the role-detail header.
 
 ### No sign-in / permissions
 
@@ -49,15 +49,27 @@ dashboard by anyone with the link).
 - Do **not** create a `Users` tab — it is not read by the backend and will be
   ignored by the auto role-tab detection.
 
-### Role applicant tabs (one per role, named after the role title)
+### `Applicants` tab (one tab holding every applicant)
 
 | A | B | C | D | E | F | G | H | I | J | K | L | M | N | O | P |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Applicant ID | Full Name | Email ID | Phone | Position | Resume | Experience | CTC | Priority | Status | Time we can go for | Review (Anisha) | Interviewer 1 | Interviewer 2 | Interviewer 3 | Interviewer 4 |
-| APP001 | Vishalya | … | 8977026096 | Sat Sys | … | 1.5 |  | 1* | next round | 28 aug interview | strong |  |  |  |  |
+| Applicant ID | Full Name | Email ID | Phone | Position Applied For | Resume/CV | Experience | CTC | Priority | Status | Time we can go for | Review (Anisha) | Interviewer 1 | Interviewer 2 | Interviewer 3 | Interviewer 4 |
+| APP001 | Vishalya | … | 8977026096 | Satellite Systems Engineer | … | 1.5 |  | 1* | next round | 28 aug interview | strong |  |  |  |  |
 
-- **Every sheet except `Roles` is auto-detected as a role tab.** Adding a new
-  role + sheet makes it appear automatically (no code change, no hard-coded list).
+- **`A Applicant ID` is required.** The dashboard keys every read, edit and
+  delete on it (`?action=candidate&id=`, `?action=update&id=`). Without it the
+  backend reads every column one position to the left and nothing matches.
+- `E Position Applied For` is matched fuzzily against `Roles!B Role Title`, so
+  Google Form values like `Satellite Systems Engineer (Responses)` still resolve.
+
+### `Interview Events` tab (created automatically)
+
+Interview scheduling writes an 11-column calendar-event row
+(`Calendar Event ID | Candidate | Role | Date | Time | Duration | Interviewer
+Name | Interviewer Email | Meet Link | Status | Notes`) to a tab named
+**`Interview Events`**, created on first use. Do not point
+`SETTINGS.INTERVIEWS_TAB_NAME` at a tab that already holds applicant data —
+`saveInterviewRow_` overwrites whole rows.
 
 ### Tab-name matching (keeps your real sheet names untouched)
 
