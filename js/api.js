@@ -120,6 +120,7 @@ var API = (function () {
     calendarCreate: function (f) {
       var p = { action: "calendarcreate", candidate: f.candidate, role: f.role, date: f.date, time: f.time };
       if (f.duration) p.duration = f.duration;
+      if (f.candidateEmail) p.candidateEmail = f.candidateEmail;
       if (f.interviewer) p.interviewer = f.interviewer;
       if (f.interviewerEmail) p.interviewerEmail = f.interviewerEmail;
       if (f.invitees && f.invitees.length) p.invitees = JSON.stringify(f.invitees);
@@ -131,6 +132,7 @@ var API = (function () {
       if (f.date) p.date = f.date;
       if (f.time) p.time = f.time;
       if (f.duration) p.duration = f.duration;
+      if (f.candidateEmail) p.candidateEmail = f.candidateEmail;
       if (f.interviewer) p.interviewer = f.interviewer;
       if (f.interviewerEmail) p.interviewerEmail = f.interviewerEmail;
       if (f.invitees) p.invitees = JSON.stringify(f.invitees);

@@ -273,29 +273,36 @@
       </div>
       <form id="cal-form">
         <div class="add-grid">
-          <label class="field"><span>Candidate *</span><input id="cal-candidate" class="input" type="text" required /></label>
+          <label class="field"><span>Participant 1 · Candidate *</span><input id="cal-candidate" class="input" type="text" required placeholder="auto-filled from row" /></label>
+          <label class="field"><span>Candidate email</span><input id="cal-candidate-email" class="input" type="email" placeholder="auto-filled from row" /></label>
           <label class="field"><span>Role *</span>
             <select id="cal-role" class="input"><option value="">Select role…</option></select>
           </label>
           <label class="field"><span>Date *</span><input id="cal-date" class="input" type="date" required /></label>
           <label class="field"><span>Time *</span><input id="cal-time" class="input" type="time" required /></label>
           <label class="field"><span>Duration (min)</span><input id="cal-duration" class="input" type="number" min="5" step="5" value="60" /></label>
-          <label class="field"><span>Interviewer (select)</span><select id="cal-interviewer-select" class="input"><option value="">Select interviewer…</option></select></label>
-          <label class="field"><span>Interviewer email</span><input id="cal-interviewer-email" class="input" type="email" placeholder="auto-filled from selection" /></label>
           <label class="field"><span>Meet link</span><input id="cal-meet" class="input" type="text" placeholder="auto from Google Meet, or paste" /></label>
         </div>
         <div class="invitees-block">
           <div class="invitees-head">
-            <span class="invitees-title">Other participants (invite 2–3 panelists)</span>
-            <button type="button" id="cal-add-invitee" class="btn btn-sm btn-ghost">+ Add invitee</button>
+            <span class="invitees-title">Participant 2 · Interviewer(s)</span>
+            <button type="button" id="cal-add-invitee" class="btn btn-sm btn-ghost">+ Add interviewer</button>
           </div>
+          <div class="add-grid">
+            <label class="field"><span>Interviewer (choose a team member)</span>
+              <select id="cal-interviewer-select" class="input"><option value="">Select interviewer…</option></select>
+            </label>
+            <label class="field"><span>Or type a name (manual)</span><input id="cal-interviewer" class="input" type="text" placeholder="e.g. John" /></label>
+            <label class="field"><span>Interviewer email</span><input id="cal-interviewer-email" class="input" type="email" placeholder="auto-filled or type" /></label>
+          </div>
+          <div class="invitees-title" style="margin-top:12px">Additional interviewers</div>
           <div id="cal-invitees"></div>
         </div>
         <label class="field"><span>Notes</span><textarea id="cal-notes" class="input" rows="2"></textarea></label>
         <div class="modal-actions">
           <button type="button" id="cal-cancel" class="btn btn-danger">Cancel Interview</button>
           <button type="button" id="cal-close-btn" class="btn btn-ghost">Close</button>
-          <button type="submit" class="btn btn-primary">Save to Calendar</button>
+          <button type="submit" class="btn btn-primary">Add to Sheet / Schedule</button>
         </div>
       </form>
     </div>

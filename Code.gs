@@ -78,7 +78,7 @@ var SETTINGS = {
   //             I Meet Link | J Status (active/cancelled) | K Notes
   INTERVIEWS_COLS: {
     eventId:0, candidate:1, role:2, date:3, time:4, duration:5,
-    interviewer:6, interviewerEmail:7, meet:8, status:9, notes:10, participants:11
+    interviewer:6, interviewerEmail:7, meet:8, status:9, notes:10, participants:11, candidateEmail:12
   }
 };
 
@@ -443,7 +443,7 @@ function readInterviews_() {
   if (!sh) return out;
   var lastRow = sh.getLastRow();
   if (lastRow < 1) return out;
-  var lastCol = Math.min(sh.getLastColumn(), 12);
+  var lastCol = Math.min(sh.getLastColumn(), 13);
   var data = sh.getRange(1, 1, lastRow, lastCol).getValues();
   var C = SETTINGS.INTERVIEWS_COLS;
   for (var i = 1; i < data.length; i++) {
@@ -454,6 +454,7 @@ function readInterviews_() {
     out.push({
       eventId: norm_(r[C.eventId]),
       candidate: norm_(r[C.candidate]),
+      candidateEmail: norm_(r[C.candidateEmail]),
       role: norm_(r[C.role]),
       date: norm_(r[C.date]),
       time: norm_(r[C.time]),
@@ -481,15 +482,26 @@ function saveInterviewRow_(ev) {
   if (!sh) sh = ss_().insertSheet(SETTINGS.INTERVIEWS_TAB_NAME);
   // ensure a header exists
   if (sh.getLastRow() < 1) {
-    sh.getRange(1, 1, 1, 12).setValues([[
+    sh.getRange(1, 1, 1, 13).setValues([[
       "Calendar Event ID","Candidate","Role","Date","Time","Duration (min)",
-      "Interviewer Name","Interviewer Email","Meet Link","Status","Notes","Participants"
+      "Interviewer Name","Interviewer Email","Meet Link","Status","Notes","Participants","Candidate Email"
     ]]);
-  } else if (sh.getLastColumn() < 12) {
-    sh.getRange(1, 12, 1, 1).setValues([["Participants"]]);
+  } else if (sh.getLastColumn() < 13) {
+    // legacy sheet without the later columns: backfill Participants (12) and
+    // Candidate Email (13) headers without touching the first 11.
+    var hdr = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    var full = ["Calendar Event ID","Candidate","Role","Date","Time","Duration (min)",
+      "Interviewer Name","Interviewer Email","Meet Link","Status","Notes","Participants","Candidate Email"];
+    var colsToWrite = {};
+    for (var ci = 0; ci < full.length; ci++) {
+      if (!norm_(hdr[ci])) colsToWrite[ci] = full[ci];
+    }
+    Object.keys(colsToWrite).forEach(function (k) {
+      try { sh.getRange(1, parseInt(k, 10) + 1, 1, 1).setValues([[colsToWrite[k]]]); } catch (e5) {}
+    });
   }
   var C = SETTINGS.INTERVIEWS_COLS;
-  var row = ["", "", "", "", "", "", "", "", "", "", "", ""];
+  var row = ["", "", "", "", "", "", "", "", "", "", "", "", ""];
   row[C.eventId] = ev.eventId;
   row[C.candidate] = ev.candidate;
   row[C.role] = ev.role;
@@ -502,10 +514,11 @@ function saveInterviewRow_(ev) {
   row[C.status] = ev.status;
   row[C.notes] = ev.notes;
   row[C.participants] = JSON.stringify(ev.participants || []);
+  row[C.candidateEmail] = ev.candidateEmail;
   if (ev.row) {
-    sh.getRange(ev.row, 1, 1, 12).setValues([row]);
+    sh.getRange(ev.row, 1, 1, 13).setValues([row]);
   } else {
-    sh.getRange(sh.getLastRow() + 1, 1, 1, 12).setValues([row]);
+    sh.getRange(sh.getLastRow() + 1, 1, 1, 13).setValues([row]);
   }
   return ev;
 }
@@ -545,6 +558,7 @@ function createCalendarEvent_(p) {
   var ev = {
     eventId: event.getId(),
     candidate: norm_(p.candidate),
+    candidateEmail: norm_(p.candidateEmail),
     role: norm_(p.role),
     date: norm_(p.date),
     time: norm_(p.time || "09:00"),
@@ -584,6 +598,7 @@ function participantEmails_(p) {
     var em = norm_(e).trim().toLowerCase();
     if (em && !seen[em]) { seen[em] = true; out.push(norm_(e).trim()); }
   }
+  push(p.candidateEmail);
   push(p.interviewerEmail);
   parseInvitees_(p.invitees).forEach(function (x) {
     if (x && typeof x.email === "string") push(x.email);
@@ -618,7 +633,7 @@ function updateCalendarEvent_(p) {
     }
     if (norm_(p.candidate) || norm_(p.role)) event.setTitle(norm_(p.candidate || ev.candidate) + (norm_(p.role || ev.role) ? " - " + norm_(p.role || ev.role) : ""));
     // Sync participant invites: add new, remove missing.
-    if (p.invitees !== undefined || p.interviewerEmail !== undefined) {
+    if (p.invitees !== undefined || p.interviewerEmail !== undefined || p.candidateEmail !== undefined) {
       var want = participantEmails_(p);
       var haveMap = {};
       var guests = event.getGuestList(true);
@@ -635,6 +650,7 @@ function updateCalendarEvent_(p) {
   var merged = {
     eventId: id,
     candidate: norm_(p.candidate || ev.candidate),
+    candidateEmail: norm_(p.candidateEmail === undefined ? ev.candidateEmail : p.candidateEmail),
     role: norm_(p.role || ev.role),
     date: norm_(p.date || ev.date),
     time: norm_(p.time || ev.time),

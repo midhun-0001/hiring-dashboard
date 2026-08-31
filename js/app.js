@@ -572,37 +572,30 @@
   var STATUS_OPTIONS = ["Call", "Cultural fit", "PSR", "Technical 1", "Technical final", "Rejected"];
 
   // interviewer name -> email. The email is looked up automatically when an
-  // interviewer is chosen in the schedule modal. Lokesh is available for every
-  // role; each role's "Assigned to" name (from the Roles tab) is added too when
-  // it appears here. Fill these in with the real addresses.
+  // interviewer is chosen in the schedule modal. The "palani" alias maps to
+  // Palaniappan's address. Update these with the current team addresses.
   var INTERVIEWER_EMAILS = {
-    "Lokesh": "lokesh@example.com",
-    "Palaniappan": "palaniappan@example.com"
+    "Lokesh": "lokesh@vyomic.space",
+    "Palaniappan": "palaniappan@vyomic.space",
+    "palani": "palaniappan@vyomic.space",
+    "Anurag": "anurag@vyomic.space",
+    "akshaansh": "akshaansh@vyomic.space"
   };
 
-  // Names always offered for every candidate, on top of each role's assigned-to.
-  var GLOBAL_INTERVIEWERS = ["Lokesh"];
+  // Real team members shown in the interviewer dropdown (Participant 2).
+  var TEAM_INTERVIEWERS = ["Lokesh", "Palaniappan", "Anurag", "akshaansh"];
 
-  // Build the interviewer dropdown for a given candidate object. Returns the
-  // <option> list: the role's assigned-to name(s) (if any) + the global list.
-  function interviewerOptions(candidate) {
-    var names = [];
-    var role = (candidate && candidate.roleTitle) || "";
-    var roles = (state.dashboard && state.dashboard.roles) || [];
-    for (var i = 0; i < roles.length; i++) {
-      if (roles[i].title && roles[i].title.toLowerCase() === role.toLowerCase()) {
-        var at = String(roles[i].assignedTo || "").trim();
-        if (at) names.push(at);
-        break;
-      }
-    }
-    GLOBAL_INTERVIEWERS.forEach(function (n) {
-      if (names.indexOf(n) === -1) names.push(n);
+  // Build the interviewer <option> list for the schedule modal. Includes the
+  // team plus an "Other…" entry that lets the user type a free-text name.
+  function interviewerOptions() {
+    var opts = [
+      '<option value="">Select interviewer…</option>'
+    ];
+    TEAM_INTERVIEWERS.forEach(function (n) {
+      opts.push('<option value="' + esc(n) + '">' + esc(n) + ' (' + esc(INTERVIEWER_EMAILS[n] || "") + ')</option>');
     });
-    return names.map(function (n) {
-      var em = INTERVIEWER_EMAILS[n] || "";
-      return '<option value="' + esc(n) + '" data-email="' + esc(em) + '">' + esc(n) + (em ? "" : " (add email)") + '</option>';
-    }).join("");
+    opts.push('<option value="__other__">Other… (type a name)</option>');
+    return opts.join("");
   }
 
   function statusOptions(current) {
@@ -897,14 +890,23 @@
     if (!role) { toast("Please select a role"); return; }
     if (!date || !time) { toast("Please set the date and time"); return; }
 
+    // Interviewer: the selected team member, or the manually typed name if the
+    // dropdown is on "Other…" / empty.
+    var ivPick = $("cal-interviewer-select").value;
+    var ivName = (ivPick && ivPick !== "__other__") ? ivPick : $("cal-interviewer").value.trim();
+    var ivEmail = $("cal-interviewer-email").value.trim();
+
     var fields = {
-      candidate: candidate, role: role, date: date, time: time,
+      candidate: candidate,
+      candidateEmail: $("cal-candidate-email").value.trim(),
+      role: role, date: date, time: time,
       duration: $("cal-duration").value,
-      interviewer: $("cal-interviewer-select").value,
-      interviewerEmail: $("cal-interviewer-email").value.trim(),
+      interviewer: ivName,
+      interviewerEmail: ivEmail,
       invitees: calendarInvitees(),
       notes: $("cal-notes").value.trim()
     };
+    if (fields.candidateEmail && !ivEmail && ivName) fields.interviewerEmail = ivName === "__other__" ? "" : (INTERVIEWER_EMAILS[ivName] || "");
     if (calEditingId) {
       API.calendarUpdate(calEditingId, fields).then(function () {
         closeModals(); toast("Interview updated on Google Calendar");
@@ -955,37 +957,50 @@
     calEditingId = id || null;
 
     var ev = id ? findCalEvent(id) : null;
-    var candidate = "", role = "", date = "", time = "", duration = "60", interviewer = "", email = "", meet = "", notes = "", participants = [];
-    if (ev) { candidate = ev.candidate; role = ev.role || ""; date = ev.date || ""; time = ev.time || ""; duration = ev.duration || "60"; interviewer = ev.interviewer || ""; email = ev.interviewerEmail || ""; meet = ev.meet || ""; notes = ev.notes || ""; participants = ev.participants || []; }
+    var candidate = "", candEmail = "", role = "", date = "", time = "", duration = "60", interviewer = "", email = "", meet = "", notes = "", participants = [];
+    if (ev) { candidate = ev.candidate; candEmail = ev.candidateEmail || ""; role = ev.role || ""; date = ev.date || ""; time = ev.time || ""; duration = ev.duration || "60"; interviewer = ev.interviewer || ""; email = ev.interviewerEmail || ""; meet = ev.meet || ""; notes = ev.notes || ""; participants = ev.participants || []; }
 
     if (pendingId) {
       var cand = (state.allApplicants || []).filter(function (a) { return a.id === pendingId; })[0];
-      if (cand) { candidate = cand.name; role = cand.roleTitle || ""; }
+      if (cand) { candidate = cand.name; candEmail = cand.email || ""; role = cand.roleTitle || ""; }
     } else if (optCandidate) {
       candidate = optCandidate.name || "";
       role = optCandidate.roleTitle || "";
-      if (candidate && !email) email = optCandidate.email || "";
+      candEmail = optCandidate.email || "";
+      // If the row has no email, still auto-fill the name (don't block).
     }
 
     $("cal-candidate").value = candidate;
     $("cal-candidate").readOnly = !!ev;
+    $("cal-candidate-email").value = candEmail;
+    $("cal-candidate-email").readOnly = !!ev;
     if (role) sel.value = role;
     $("cal-date").value = date;
     $("cal-time").value = time;
     $("cal-duration").value = duration;
 
-    // interviewer dropdown: populated for this candidate's role. When editing,
-    // the previously chosen interviewer is forced in as an option.
+    // Interviewer (Participant 2): dropdown of team members + "Other…" for free
+    // text. Selecting a team member auto-fills the email from the map.
     var ivSel = $("cal-interviewer-select");
-    var ivOpts = interviewerOptions({ roleTitle: role });
-    var ivOptionsHTML = '<option value="">Select interviewer…</option>' + ivOpts;
-    if (interviewer && ivOptionsHTML.indexOf('value="' + interviewer.replace(/"/g, "&quot;") + '"') === -1) {
-      var em = INTERVIEWER_EMAILS[interviewer] || email || "";
-      ivOptionsHTML += '<option value="' + esc(interviewer) + '" data-email="' + esc(em) + '">' + esc(interviewer) + '</option>';
+    var ivNameField = $("cal-interviewer");
+    var ivEmailField = $("cal-interviewer-email");
+    var isTeam = interviewer && TEAM_INTERVIEWERS.indexOf(interviewer) !== -1;
+
+    ivSel.innerHTML = interviewerOptions();
+    if (isTeam) {
+      ivSel.value = interviewer;
+      ivNameField.value = "";
+      ivEmailField.value = INTERVIEWER_EMAILS[interviewer] || email || "";
+    } else if (interviewer) {
+      // previously-chosen free-text interviewer -> route through "Other…"
+      ivSel.value = "__other__";
+      ivNameField.value = interviewer;
+      ivEmailField.value = email || "";
+    } else {
+      ivSel.value = "";
+      ivNameField.value = "";
+      ivEmailField.value = "";
     }
-    ivSel.innerHTML = ivOptionsHTML;
-    ivSel.value = interviewer || "";
-    $("cal-interviewer-email").value = interviewer ? (INTERVIEWER_EMAILS[interviewer] || email || "") : "";
 
     $("cal-meet").value = meet;
     $("cal-meet").readOnly = !!ev;
@@ -1184,9 +1199,18 @@
   $("cal-form").addEventListener("submit", function (e) { e.preventDefault(); calendarSubmit(); });
   $("cal-add-invitee").addEventListener("click", function () { addInviteeRow(inviteeRowHTML("", "")); });
   $("cal-interviewer-select").addEventListener("change", function () {
-    var opt = this.options[this.selectedIndex];
-    var em = opt ? opt.getAttribute("data-email") || "" : "";
-    $("cal-interviewer-email").value = em;
+    var v = this.value;
+    var nameField = $("cal-interviewer");
+    var emailField = $("cal-interviewer-email");
+    if (v && v !== "__other__") {
+      nameField.value = v;
+      emailField.value = INTERVIEWER_EMAILS[v] || "";
+    } else if (v === "__other__") {
+      nameField.focus();
+    } else {
+      nameField.value = "";
+      emailField.value = "";
+    }
   });
 
   /* ---------------- add candidate ---------------- */
