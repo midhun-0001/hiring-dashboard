@@ -972,8 +972,10 @@
 
     $("cal-candidate").value = candidate;
     $("cal-candidate").readOnly = !!ev;
+    $("cal-candidate").placeholder = candidate || "Candidate full name";
     $("cal-candidate-email").value = candEmail;
     $("cal-candidate-email").readOnly = !!ev;
+    $("cal-candidate-email").placeholder = candEmail || "name@example.com";
     if (role) sel.value = role;
     $("cal-date").value = date;
     $("cal-time").value = time;
