@@ -151,6 +151,34 @@
       '</div>'));
   }
 
+  /* Candidate profile: mirrors the four groups renderCandidate builds
+     (Candidate / Application / Reviews / Interview) plus the action row. */
+  function skeletonCandidate() {
+    var groups = [7, 3, 5, 1];
+    var html = groups.map(function (n) {
+      return '<div class="cand-group skel-cand-group">' +
+        '<h3><span class="skel skel-grouptitle"></span></h3>' +
+        '<div class="cand-grid skel-stagger">' + rep(n,
+          '<div class="skel-detail-item">' +
+            '<div class="skel skel-line"></div>' +
+            '<div class="skel skel-line long"></div>' +
+          '</div>') +
+        '</div></div>';
+    }).join("");
+    skelOn($("cand-sections"), html);
+
+    skelOn($("cand-actions"),
+      '<div class="skel skel-btn w1"></div>' +
+      '<div class="skel skel-btn w2"></div>' +
+      '<div class="skel skel-btn w1"></div>' +
+      '<div class="skel skel-btn w3"></div>');
+
+    $("cand-name").innerHTML = '<span class="skel skel-title"></span>';
+    var badge = $("cand-role-badge");
+    badge.textContent = "";
+    badge.className = "badge skel";
+  }
+
   /* ---------------- config / banner ---------------- */
 
   function hideLoading() {
@@ -449,16 +477,27 @@
   /* ---------------- candidates ---------------- */
 
   function openCandidate(id) {
-    inlineLoading($("cand-sections"), "Loading candidate…");
-    var acts = $("cand-actions"); if (acts) acts.innerHTML = "";
+    skeletonCandidate();
+    goView("candidate"); // switch immediately so the skeleton is what the click shows
     API.candidate(id).then(function (c) {
       state.currentCandidate = c;
       renderCandidate(c);
-    }).catch(showError);
+    }).catch(function (err) {
+      skelOff($("cand-sections"));
+      skelOff($("cand-actions"));
+      $("cand-sections").innerHTML = '<div class="empty">Could not load this candidate.</div>';
+      $("cand-actions").innerHTML = "";
+      $("cand-name").textContent = "Candidate";
+      $("cand-role-badge").className = "badge badge-blue";
+      showError(err);
+    });
   }
 
   function renderCandidate(c) {
+    skelOff($("cand-sections"));
+    skelOff($("cand-actions"));
     $("cand-name").textContent = c.name || "Candidate";
+    $("cand-role-badge").className = "badge badge-blue";
     $("cand-role-badge").textContent = c.roleTitle || c.tab || "";
     $("cand-back-label").textContent = state.prevView === "role-detail" && state.currentRole ? state.currentRole.title : "Back";
 

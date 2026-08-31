@@ -4,15 +4,15 @@
  * MODEL  (matches the existing spreadsheet - source of truth)
  * ----------------------------------------------------------------------
  *  - A "Roles" master tab: one row per role.
- *  - One tab per role (named after the role title): that role's applicants.
- *  - Every sheet EXCEPT "Roles" is treated as a role's applicant tab and is
- *    auto-detected (no hard-coded tab list).
+ *  - ONE "Applicants" tab holding every applicant. The role an applicant
+ *    applied for is read from the "Position Applied For" column (col E);
+ *    matching to a Roles-tab title is fuzzy / case-insensitive.
  *
  * ROLES TAB COLUMNS
  *   A Role ID | B Role Title | C Department | D Status (Open/Closed)
  *   E Approval Stage | F Interview Kit | G Approval Owner
  *
- * APPLICANT TAB COLUMNS (identical for every role tab)
+ * APPLICANT TAB COLUMNS (single "Applicants" tab)
  *   A Applicant ID | B Full Name | C Email ID | D Phone Number
  *   E Position Applied For | F Resume/CV | G Total Years of Experience
  *   H CTC | I Priority | J Status | K Time we can go for
@@ -27,8 +27,8 @@
  * API (all GET + query params to avoid Apps Script CORS preflight)
  *   ?action=dashboard                 -> { stats, roles, upcomingInterviews }
  *   ?action=roles                     -> role cards (with applicantCount)
- *   ?action=roleapplicants&role=Title -> applicants for one role tab
- *   ?action=applicants                -> ALL applicants across all role tabs
+ *   ?action=roleapplicants&role=Title -> applicants for one role
+ *   ?action=applicants                -> ALL applicants
  *   ?action=candidate&id=APP123       -> one applicant by Applicant ID
  *   ?action=interviews                -> upcoming / pending / completed
  *   ?action=update&id=APP123&field=status&value=.. -> update one field
@@ -44,16 +44,15 @@
 
 var SETTINGS = {
   ROLES_TAB_NAME: "Roles",
-  // All applicants live in ONE tab. Every row carries a "Role" column (index 16),
-  // so no more reading one sheet per role. Role names in this column should match
-  // the Roles tab titles (matching is fuzzy / case-insensitive).
+  // All applicants live in ONE tab. The role an applicant applied for is read
+  // from the "Position Applied For" column (E) - Role column (index 16) may
+  // exist but is ignored/no longer required. Matching is fuzzy/insensitive.
   APP_TAB_NAME: "Applicants",
   ROLES_COLS: { id:0, title:1, department:2, status:3, approvalStage:4, interviewKit:5, approvalOwner:6 },
   APP_COLS: {
     applicantId:0, name:1, email:2, phone:3, position:4, resume:5,
     experience:6, ctc:7, priority:8, status:9, time:10,
-    reviewAnisha:11, review1:12, review2:13, review3:14, review4:15,
-    role:16
+    reviewAnisha:11, review1:12, review2:13, review3:14, review4:15
   },
   // Google Calendar / interview scheduling. CALENDAR_ID empty -> the Apps
   // Script account's default calendar is used. Events are referenced from a
@@ -166,17 +165,17 @@ function readRoles_() {
  * Applicant single-tab
  * ============================================================ */
 
-// Map one raw row -> applicant object with meta. `role` comes from the
-// "Role" column (index 16); if a row has its own position text it is kept.
+// Map one raw row -> applicant object with meta. The role an applicant
+// applied for is read from the "Position Applied For" column (E).
 function mapApplicant_(row) {
   var C = SETTINGS.APP_COLS;
-  var role = norm_(row[C.role]);
+  var role = norm_(row[C.position]);
   return {
     id: norm_(row[C.applicantId]),
     name: norm_(row[C.name]),
     email: norm_(row[C.email]),
     phone: norm_(row[C.phone]),
-    position: norm_(row[C.position]) || role,
+    position: role,
     resume: norm_(row[C.resume]),
     experience: norm_(row[C.experience]),
     ctc: norm_(row[C.ctc]),
@@ -392,7 +391,7 @@ var FIELD_MAP = {
   status: "J", priority: "I", time: "K", ctc: "H", experience: "G",
   reviewAnisha: "L", review1: "M", review2: "N", review3: "O", review4: "P",
   name: "B", email: "C", phone: "D", position: "E", resume: "F",
-  role: "Q"
+  role: "E"
 };
 
 // Find the applicant row by Applicant ID (case-insensitive) in the single
@@ -725,12 +724,12 @@ function nextApplicantId_() {
 // Append a new applicant row to the single Applicants tab.
 function addApplicant_(sh, p) {
   var C = SETTINGS.APP_COLS;
-  var row = ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
+  var row = ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""];
   row[C.applicantId] = norm_(p.app && p.app.id ? p.app.id : nextApplicantId_());
   row[C.name] = norm_(p.name);
   row[C.email] = norm_(p.email);
   row[C.phone] = norm_(p.phone);
-  row[C.position] = norm_(p.position);
+  row[C.position] = norm_(p.position || p.role);
   row[C.resume] = norm_(p.resume);
   row[C.experience] = norm_(p.experience);
   row[C.ctc] = norm_(p.ctc);
@@ -742,9 +741,8 @@ function addApplicant_(sh, p) {
   row[C.review2] = norm_(p.review2);
   row[C.review3] = norm_(p.review3);
   row[C.review4] = norm_(p.review4);
-  row[C.role] = norm_(p.role);
   var newRow = sh.getLastRow() + 1;
-  sh.getRange(newRow, 1, 1, 17).setValues([row]);
+  sh.getRange(newRow, 1, 1, 16).setValues([row]);
   var applicant = mapApplicant_(row);
   applicant.row = newRow;
   return { row: newRow, id: row[C.applicantId], applicant: applicant };

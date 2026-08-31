@@ -404,12 +404,35 @@ td .inline-loader { padding: 22px 8px; }
 }
 .skel-list-item .li-left { flex: 1; display: flex; flex-direction: column; gap: 7px; }
 
+/* candidate profile placeholders */
+.skel-title { display: inline-block; width: 190px; height: 20px; vertical-align: middle; }
+#cand-role-badge.skel { width: 90px; height: 20px; border-radius: 999px; }
+.skel-cand-group h3 { display: flex; align-items: center; }
+.skel-grouptitle { width: 88px; height: 9px; }
+.skel-detail-item {
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; background: var(--input);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.skel-detail-item .skel-line:first-child { width: 55%; height: 9px; }
+.skel-btn { height: 30px; border-radius: 8px; }
+.skel-btn.w1 { width: 96px; }
+.skel-btn.w2 { width: 110px; }
+.skel-btn.w3 { width: 132px; }
+
 /* Staggered starts so the shimmer reads as a wave, not one flat pulse. */
-.skel-stagger > *:nth-child(2) .skel::after { animation-delay: 0.12s; }
-.skel-stagger > *:nth-child(3) .skel::after { animation-delay: 0.24s; }
-.skel-stagger > *:nth-child(4) .skel::after { animation-delay: 0.36s; }
-.skel-stagger > *:nth-child(5) .skel::after { animation-delay: 0.48s; }
-.skel-stagger > *:nth-child(6) .skel::after { animation-delay: 0.60s; }
+.skel-stagger > *:nth-child(2) .skel::after,
+.skel-stagger > .skel:nth-child(2)::after { animation-delay: 0.12s; }
+.skel-stagger > *:nth-child(3) .skel::after,
+.skel-stagger > .skel:nth-child(3)::after { animation-delay: 0.24s; }
+.skel-stagger > *:nth-child(4) .skel::after,
+.skel-stagger > .skel:nth-child(4)::after { animation-delay: 0.36s; }
+.skel-stagger > *:nth-child(5) .skel::after,
+.skel-stagger > .skel:nth-child(5)::after { animation-delay: 0.48s; }
+.skel-stagger > *:nth-child(6) .skel::after,
+.skel-stagger > .skel:nth-child(6)::after { animation-delay: 0.60s; }
+.skel-stagger > *:nth-child(7) .skel::after,
+.skel-stagger > .skel:nth-child(7)::after { animation-delay: 0.72s; }
 
 @media (prefers-reduced-motion: reduce) {
   .skel::after { animation: none; }
