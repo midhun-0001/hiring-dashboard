@@ -478,10 +478,9 @@
     var el = $("pipeline");
     if (!applicants.length) { el.innerHTML = '<div class="empty">No applicants for this role yet.</div>'; return; }
     var rows = applicants.map(function (a) {
-      var b = statusBadge(a.status);
       return '<tr class="clickable" data-id="' + esc(a.id) + '">' +
         '<td class="cell-primary">' + esc(a.name) + '</td>' +
-        '<td>' + belle(a) + '</td>' +
+        '<td><select class="input status-select pipe-status" data-id="' + esc(a.id) + '" data-prev="' + esc(a.status || "") + '" title="Change status">' + statusOptions(a.status) + '</select></td>' +
         '<td>' + esc(a.experience || "—") + '</td>' +
         '<td>' + esc(a.ctc || "—") + '</td>' +
         '<td>' + esc(a.phone || "—") + '</td>' +
@@ -494,8 +493,27 @@
       '<tbody>' + rows + '</tbody></table></div>';
     el.querySelectorAll("tbody tr").forEach(function (tr) {
       tr.addEventListener("click", function (e) {
-        if (e.target && e.target.closest && (e.target.closest(".pipe-review") || e.target.closest(".resume-link"))) return;
+        if (e.target && e.target.closest && (e.target.closest(".pipe-review") || e.target.closest(".resume-link") || e.target.closest(".pipe-status"))) return;
         openCandidate(tr.dataset.id);
+      });
+    });
+    el.querySelectorAll(".pipe-status").forEach(function (sel) {
+      sel.addEventListener("click", function (e) { e.stopPropagation(); });
+      sel.addEventListener("change", function () {
+        var id = sel.dataset.id;
+        var prev = sel.dataset.prev;
+        sel.disabled = true;
+        API.update(id, "status", sel.value).then(function () {
+          toast("Status updated");
+          sel.disabled = false;
+          sel.dataset.prev = sel.value;
+          loadDashboard();
+          if (state.allApplicants.length) loadAllApplicants();
+        }).catch(function (err) {
+          sel.disabled = false;
+          if (prev !== undefined) sel.value = prev;
+          showError(err);
+        });
       });
     });
     el.querySelectorAll(".pipe-review").forEach(function (inp) {
@@ -510,11 +528,6 @@
         }).catch(showError);
       });
     });
-  }
-  // small helper: status badge cell
-  function belle(a) {
-    var b = statusBadge(a.status);
-    return '<span class="badge ' + b.cls + '">' + esc(b.label) + '</span>';
   }
 
   /* ---------------- dashboard interviews ---------------- */
