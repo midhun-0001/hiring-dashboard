@@ -783,6 +783,7 @@
     API.calendar().then(function (data) {
       state.calendar = data;
       if (state.currentView === "interviews") renderInterviewsPage();
+      if ($("calendar-modal") && !$("calendar-modal").classList.contains("hidden")) checkAvailability();
     }).catch(showError);
   }
 
@@ -944,6 +945,72 @@
     });
   }
 
+  /* ---------------- interviewer availability check ---------------- */
+
+  // All scheduled (non-cancelled) interviews that involve the given interviewer,
+  // matched by name or email against the interviewer field and participant list.
+  function findInterviewsFor(name, email) {
+    var all = ((state.calendar && state.calendar.events) || []);
+    var nl = (name || "").toLowerCase().trim();
+    var el = (email || "").toLowerCase().trim();
+    return all.filter(function (e) {
+      if (e.status === "cancelled") return false;
+      var match = false;
+      if ((e.interviewer || "").toLowerCase() === nl) match = true;
+      if ((e.interviewerEmail || "").toLowerCase() === el) match = true;
+      (e.participants || []).forEach(function (pp) {
+        if (!pp) return;
+        if ((pp.name || "").toLowerCase() === nl || (pp.email || "").toLowerCase() === el) match = true;
+      });
+      return match;
+    });
+  }
+
+  function checkAvailability() {
+    var box = $("cal-availability");
+    if (!box) return;
+    var date = $("cal-date").value;
+    var time = $("cal-time").value;
+    if (!date || !time) { box.className = "availability hidden"; return; }
+    var dur = parseInt($("cal-duration").value, 10) || 60;
+    var ivPick = $("cal-interviewer-select").value;
+    var ivName = (ivPick && ivPick !== "__other__") ? ivPick : $("cal-interviewer").value.trim();
+    var ivEmail = $("cal-interviewer-email").value.trim();
+    if (!ivName && !ivEmail) { box.className = "availability hidden"; return; }
+
+    var start = new Date(date + "T" + time + ":00");
+    if (isNaN(start.getTime())) { box.className = "availability hidden"; return; }
+    var end = new Date(start.getTime() + dur * 60000);
+
+    var mine = findInterviewsFor(ivName, ivEmail);
+    var busy = mine.filter(function (e) {
+      if (!e.date || !e.time) return false;
+      var es = new Date(e.date + "T" + e.time + ":00");
+      if (isNaN(es.getTime())) return false;
+      var ee = new Date(es.getTime() + ((e.duration || 60) * 60000));
+      return start < ee && es < end;
+    });
+
+    if (busy.length) {
+      box.className = "availability availability-busy";
+      box.innerHTML = '<strong>' + esc(ivName || ivEmail) + '</strong> is already booked at this time:' +
+        '<ul>' + busy.map(function (e) {
+          return '<li>' + esc(e.candidate || "") + ' · ' + esc(fmtDate(e.date)) +
+            ' ' + esc(fmtTime(e.time)) + ' (' + (e.duration || 60) + ' min)</li>';
+        }).join("") + '</ul>';
+      return;
+    }
+
+    var sameDay = mine.filter(function (e) { return e.date === date; });
+    box.className = "availability availability-ok";
+    if (sameDay.length) {
+      box.innerHTML = '<strong>' + esc(ivName || ivEmail) + '</strong> is free at this time. Same day: ' +
+        sameDay.map(function (e) { return esc(e.candidate) + ' ' + esc(fmtTime(e.time)); }).join(", ") + '.';
+    } else {
+      box.innerHTML = '<strong>' + esc(ivName || ivEmail) + '</strong> appears free at this time.';
+    }
+  }
+
   function openCalendarModal(id, pendingId, optCandidate) {
     // populate role select
     var roles = (state.dashboard && state.dashboard.roles) || [];
@@ -1012,6 +1079,11 @@
 
     $("calendar-modal").classList.remove("hidden");
     if (participants.length === 0) addInviteeRow(inviteeRowHTML("", ""));
+
+    // Availability check needs the full list of scheduled interviews; load it on
+    // demand if the Interviews view hasn't been opened yet.
+    if (!state.calendar) loadInterviews();
+    checkAvailability();
   }
 
   function cancelInterview() {
@@ -1213,6 +1285,15 @@
       nameField.value = "";
       emailField.value = "";
     }
+    checkAvailability();
+  });
+  ["cal-date", "cal-time", "cal-duration"].forEach(function (id) {
+    $(id).addEventListener("change", checkAvailability);
+  });
+  $("cal-interviewer").addEventListener("input", checkAvailability);
+  $("cal-interviewer-email").addEventListener("input", checkAvailability);
+  $("cal-candidate").addEventListener("input", function () {
+    if (!$("cal-candidate").value) $("cal-candidate").placeholder = "Candidate full name";
   });
 
   /* ---------------- add candidate ---------------- */
