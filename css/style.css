@@ -328,6 +328,21 @@ input, select { font-family: inherit; font-size: 14px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 #edit-fields .field input, #edit-fields .field select { width: 100%; }
 
+/* ---------- Modal busy state ----------
+   Covers the modal card while a write is in flight: the same orbiting
+   satellite used elsewhere, plus a veil so the form can't be re-submitted. */
+.modal-card { position: relative; }
+.modal-busy-veil {
+  position: absolute; inset: 0; z-index: 2;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+}
+.modal-busy-veil .mini-sat { width: 36px; height: 36px; margin-right: 0; }
+.modal-busy-veil .mini-sat .orbit { width: 34px; height: 34px; border-width: 2px; }
+.modal-busy-veil .mini-sat .sat { top: -5px; width: 8px; height: 8px; margin-left: -4px; }
+.modal-busy-msg { font-size: 12.5px; color: var(--muted); }
+
 /* ---------- Toast ---------- */
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);

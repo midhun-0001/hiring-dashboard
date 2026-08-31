@@ -179,6 +179,30 @@
     badge.className = "badge skel";
   }
 
+  /* Busy state for a modal while a write is in flight. Shows the orbiting
+     satellite over the card and blocks the form so it can't be submitted twice. */
+  function modalCard(modalId) {
+    var m = $(modalId);
+    return m ? m.querySelector(".modal-card") : null;
+  }
+  function modalBusy(modalId, msg) {
+    var card = modalCard(modalId);
+    if (!card || card.querySelector(".modal-busy-veil")) return;
+    var veil = document.createElement("div");
+    veil.className = "modal-busy-veil";
+    veil.innerHTML = '<span class="mini-sat"><span class="orbit"><span class="sat"></span></span></span>' +
+      '<div class="modal-busy-msg">' + esc(msg || "Saving…") + '</div>';
+    card.appendChild(veil);
+    card.querySelectorAll("button, input, select, textarea").forEach(function (el) { el.disabled = true; });
+  }
+  function modalIdle(modalId) {
+    var card = modalCard(modalId);
+    if (!card) return;
+    var veil = card.querySelector(".modal-busy-veil");
+    if (veil) veil.parentNode.removeChild(veil);
+    card.querySelectorAll("button, input, select, textarea").forEach(function (el) { el.disabled = false; });
+  }
+
   /* ---------------- config / banner ---------------- */
 
   function hideLoading() {
@@ -199,7 +223,12 @@
   }
 
   function openConfigModal() { $("config-input").value = API.getUrl(); $("config-modal").classList.remove("hidden"); }
-  function closeModals() { $("config-modal").classList.add("hidden"); $("edit-modal").classList.add("hidden"); $("add-modal").classList.add("hidden"); $("calendar-modal").classList.add("hidden"); }
+  function closeModals() {
+    ["config-modal", "edit-modal", "add-modal", "calendar-modal"].forEach(function (id) {
+      modalIdle(id); // never leave a veil / disabled form behind for the next open
+      $(id).classList.add("hidden");
+    });
+  }
 
   /* ---------------- view switching ---------------- */
 
@@ -981,6 +1010,7 @@
       time: $("add-time").value.trim(),
       position: role
     };
+    modalBusy("add-modal", "Adding " + name + " to the sheet…");
     API.addApplicant(fields).then(function (res) {
       closeModals();
       toast("Added " + name + " to " + role + " tab");
