@@ -152,11 +152,11 @@
   }
 
   function skeletonChart() {
-    skelOn($("roles-chart"), '<div class="chart-bars">' + rep(6,
-      '<div class="chart-bar">' +
+    skelOn($("roles-chart"), '<div class="chart-hbars">' + rep(6,
+      '<div class="chart-hbar-row">' +
         '<div class="skel skel-line short"></div>' +
-        '<div class="skel" style="flex:1;width:100%;border-radius:6px 6px 0 0"></div>' +
-        '<div class="skel skel-line mid"></div>' +
+        '<div class="skel" style="flex:1;height:14px;border-radius:7px"></div>' +
+        '<div class="skel skel-line" style="width:20px;height:12px"></div>' +
       '</div>') + '</div>');
   }
 
@@ -304,7 +304,9 @@
     });
   }
 
-  // Vertical bar graph: applicant count per role (top 10 by count), no libs.
+  var CHART_INITIAL = 10;
+
+  // Horizontal bar chart: applicant count per role, descending, expandable. No libs.
   function renderRoleChart(roles) {
     var el = $("roles-chart");
     if (!el) return;
@@ -312,22 +314,40 @@
     var countEl = $("chart-count");
     var list = (roles || []).slice();
     if (!list.length) { el.innerHTML = '<div class="empty">No roles yet.</div>'; return; }
-    var top = list.slice().sort(function (a, b) { return (b.applicantCount || 0) - (a.applicantCount || 0); }).slice(0, 10);
+    list.sort(function (a, b) { return (b.applicantCount || 0) - (a.applicantCount || 0); });
     var max = 1;
-    top.forEach(function (r) { var n = r.applicantCount || 0; if (n > max) max = n; });
-    el.innerHTML = '<div class="chart-bars">' + top.map(function (r) {
+    list.forEach(function (r) { var n = r.applicantCount || 0; if (n > max) max = n; });
+
+    var expanded = list.length <= CHART_INITIAL;
+
+    function barRow(r) {
       var n = r.applicantCount || 0;
-      var h = Math.round(n / max * 100);
-      var label = (r.title || "Unknown role");
-      return '<div class="chart-bar" title="' + esc(label) + ': ' + n + '">' +
-        '<div class="bar-val">' + n + '</div>' +
-        '<div class="bar-col" style="height:' + (h < 4 ? 4 : h) + '%"></div>' +
-        '<div class="bar-lab">' + esc(label) + '</div>' +
+      var pct = Math.round(n / max * 100);
+      var label = r.title || "Unknown role";
+      return '<div class="chart-hbar-row">' +
+        '<div class="chart-hbar-label" title="' + esc(label) + '">' + esc(label) + '</div>' +
+        '<div class="chart-hbar-right">' +
+          '<div class="chart-hbar-track"><div class="chart-hbar-fill" style="width:' + (pct < 3 ? 3 : pct) + '%"></div></div>' +
+          '<div class="chart-hbar-count">' + n + '</div>' +
+        '</div>' +
       '</div>';
-    }).join("") + '</div>';
-    if (top.length > 1) el.innerHTML += '<div class="chart-legend">Applicants per role</div>';
-    if (countEl && top.length < list.length) countEl.textContent = "Top " + top.length + " of " + list.length;
-    else if (countEl) countEl.textContent = list.length + " role" + (list.length === 1 ? "" : "s");
+    }
+
+    function render() {
+      var items = expanded ? list : list.slice(0, CHART_INITIAL);
+      var html = '<div class="chart-hbars">' + items.map(barRow).join("") + '</div>';
+      if (expanded) {
+        if (list.length > CHART_INITIAL) html += '<div class="chart-legend">' + list.length + ' roles shown</div>';
+      } else {
+        html += '<button class="chart-expand" id="chart-expand-btn">Show all ' + list.length + ' roles</button>';
+      }
+      el.innerHTML = html;
+      var btn = $("chart-expand-btn");
+      if (btn) btn.addEventListener("click", function () { expanded = true; render(); });
+    }
+
+    render();
+    if (countEl) countEl.textContent = list.length + " role" + (list.length === 1 ? "" : "s");
   }
 
   function loadAllApplicants() {

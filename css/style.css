@@ -218,21 +218,30 @@ input, select { font-family: inherit; font-size: 14px; }
 .rail-panel { margin-bottom: 0; }
 .rail-panel .panel-head h2 { font-size: 14px; }
 
-/* ---------- Applicants per role compact vertical bar graph ---------- */
+/* ---------- Applicants per role horizontal bar chart ---------- */
 .roles-chart { padding: 12px 16px 14px; }
-.chart-bars { display: flex; align-items: flex-end; gap: 6px; height: 120px; }
-.chart-bar { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
-.chart-bar .bar-val { font-size: 10.5px; font-weight: 600; color: var(--text); line-height: 1; }
-.chart-bar .bar-col {
-  width: 100%; max-width: 26px; border-radius: 5px 5px 0 0;
-  background: linear-gradient(180deg, #6d8dff, var(--brand));
-  transition: height 0.4s ease; margin-top: auto;
+.roles-chart .empty { padding: 20px 0; }
+.chart-hbars { display: flex; flex-direction: column; gap: 7px; }
+.chart-hbar-row { display: flex; align-items: center; gap: 8px; }
+.chart-hbar-label {
+  font-size: 12px; color: var(--text); line-height: 1.3; flex-shrink: 0;
+  width: 130px; overflow-wrap: break-word; word-break: break-word;
 }
-.chart-bar .bar-lab {
-  font-size: 8.5px; color: var(--muted); line-height: 1.1; text-align: center;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+.chart-hbar-right { flex: 1; display: flex; align-items: center; gap: 6px; }
+.chart-hbar-track { flex: 1; height: 14px; background: var(--soft); border-radius: 7px; overflow: hidden; }
+.chart-hbar-fill {
+  height: 100%; border-radius: 7px; background: var(--brand); transition: width 0.4s ease;
 }
-.chart-legend { margin-top: 8px; font-size: 11px; color: var(--muted); text-align: center; }
+.chart-hbar-count {
+  font-size: 12px; font-weight: 600; color: var(--muted); min-width: 26px; text-align: right;
+}
+.chart-expand {
+  display: block; margin-top: 8px; width: 100%; text-align: center;
+  font-size: 11.5px; color: var(--brand); background: none; border: none;
+  cursor: pointer; padding: 4px 0;
+}
+.chart-expand:hover { text-decoration: underline; }
+.chart-legend { margin-top: 6px; font-size: 11px; color: var(--muted); text-align: center; }
 
 @media (max-width: 1000px) {
   .dash-layout { flex-direction: column; }
