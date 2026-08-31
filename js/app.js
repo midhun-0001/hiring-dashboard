@@ -385,15 +385,16 @@
         '<td>' + esc(a.experience || "—") + '</td>' +
         '<td>' + esc(a.ctc || "—") + '</td>' +
         '<td>' + esc(a.phone || "—") + '</td>' +
+        '<td>' + (a.resume ? '<a href="' + esc(a.resume) + '" target="_blank" rel="noopener" class="resume-link" title="Open resume">View</a>' : "—") + '</td>' +
         '<td><input class="input pipe-review" data-id="' + esc(a.id) + '" value="' + esc(a.reviewAnisha || "") + '" placeholder="Short review…" title="Type a short review, then press Enter / click away to save" /></td>' +
       '</tr>';
     }).join("");
     el.innerHTML = '<div class="table-wrap"><table class="table">' +
-      '<thead><tr><th>Candidate</th><th>Status</th><th>Experience</th><th>CTC</th><th>Mobile</th><th>Short Review</th></tr></thead>' +
+      '<thead><tr><th>Candidate</th><th>Status</th><th>Experience</th><th>CTC</th><th>Mobile</th><th>Resume</th><th>Short Review</th></tr></thead>' +
       '<tbody>' + rows + '</tbody></table></div>';
     el.querySelectorAll("tbody tr").forEach(function (tr) {
       tr.addEventListener("click", function (e) {
-        if (e.target && e.target.closest && e.target.closest(".pipe-review")) return;
+        if (e.target && e.target.closest && (e.target.closest(".pipe-review") || e.target.closest(".resume-link"))) return;
         openCandidate(tr.dataset.id);
       });
     });
