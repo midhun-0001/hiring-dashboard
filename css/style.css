@@ -126,7 +126,7 @@ input, select { font-family: inherit; font-size: 14px; }
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
-  padding: 7px 12px;
+  padding: 9px 16px;
   border-radius: 8px;
   font-weight: 500;
   font-size: 13px;
@@ -139,7 +139,7 @@ input, select { font-family: inherit; font-size: 14px; }
 .btn-ghost:hover { background: var(--soft-2); }
 .btn-danger { background: #dc2626; border-color: #dc2626; color: #fff; }
 .btn-danger:hover { background: #b91c1c; }
-.btn-sm { padding: 4px 8px; font-size: 12px; }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
 .icon { width: 15px; height: 15px; flex: none; }
 
 /* Google Meet link shown in the interviews table */
@@ -186,7 +186,7 @@ input, select { font-family: inherit; font-size: 14px; }
 .input {
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 8px 12px;
+  padding: 10px 14px;
   background: var(--surface);
   color: var(--text);
   outline: none;
@@ -273,7 +273,7 @@ input, select { font-family: inherit; font-size: 14px; }
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 16px;
-  padding: 20px;
+  padding: 24px;
 }
 .role-card {
   border: 1px solid var(--border);
@@ -329,7 +329,7 @@ input, select { font-family: inherit; font-size: 14px; }
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 12px;
-  padding: 20px;
+  padding: 24px;
 }
 .detail-item {
   border: 1px solid var(--border);
@@ -338,7 +338,7 @@ input, select { font-family: inherit; font-size: 14px; }
 }
 .detail-item .k { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.03em; }
 .detail-item .v { font-weight: 500; margin-top: 3px; word-break: break-word; }
-.detail-actions { padding: 0 20px 20px; display: flex; flex-wrap: wrap; gap: 8px; }
+.detail-actions { padding: 0 24px 24px; display: flex; flex-wrap: wrap; gap: 10px; }
 
 /* ---------- Modal ---------- */
 .modal {
@@ -355,15 +355,15 @@ input, select { font-family: inherit; font-size: 14px; }
 }
 .modal-head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 18px; border-bottom: 1px solid var(--border);
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
 }
 .modal-head h3 { font-size: 16px; }
-#edit-form, #config-form { padding: 18px; }
-.field { display: block; margin-bottom: 14px; }
+#edit-form, #config-form, #add-form, #cal-form { padding: 20px; }
+.field { display: block; margin-bottom: 16px; }
 .field > span { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px; }
 .field .input, .field input, .field select { width: 100%; }
 .field small { color: var(--muted); display: block; margin-top: 4px; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
 #edit-fields .field input, #edit-fields .field select { width: 100%; }
 
 /* ---------- Modal busy state ----------
@@ -511,7 +511,7 @@ td .inline-loader { padding: 22px 8px; }
 /* ---------- Filter row ---------- */
 .filter-row {
   display: flex; gap: 10px; flex-wrap: wrap;
-  padding: 12px 20px; border-bottom: 1px solid var(--border);
+  padding: 14px 20px; border-bottom: 1px solid var(--border);
 }
 .filter-row .input { width: 170px; }
 .search-wide { width: 320px !important; }
@@ -522,7 +522,7 @@ td .inline-loader { padding: 22px 8px; }
 
 /* ---------- Pipeline (role detail) ---------- */
 .pipeline {
-  display: flex; gap: 14px; overflow-x: auto; padding: 20px; align-items: flex-start;
+  display: flex; gap: 14px; overflow-x: auto; padding: 24px; align-items: flex-start;
 }
 .pipe-col {
   flex: 0 0 210px; background: var(--soft); border: 1px solid var(--border);
@@ -549,13 +549,13 @@ td .inline-loader { padding: 22px 8px; }
 .seg-btn.active { background: var(--active-tab); color: var(--active-tab-text); box-shadow: 0 1px 2px rgba(16,24,40,0.1); }
 
 /* ---------- Candidate sections ---------- */
-.cand-sections { padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+.cand-sections { padding: 24px; display: flex; flex-direction: column; gap: 20px; }
 .cand-group { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
 .cand-group h3 {
   font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
   background: var(--soft); padding: 9px 14px; border-bottom: 1px solid var(--border);
 }
-.cand-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; padding: 14px; }
+.cand-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; padding: 16px; }
 .detail-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--input); }
 .detail-item .k { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.03em; }
 .detail-item .v { font-weight: 500; margin-top: 3px; word-break: break-word; }
@@ -571,10 +571,10 @@ td .inline-loader { padding: 22px 8px; }
 .table .status-select { min-width: 120px; padding: 6px 8px; font-size: 13px; cursor: pointer; }
 
 /* interview list items in the rail */
-.list { padding: 8px; display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+.list { padding: 10px; display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; }
 .list-item {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+  padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
   transition: border-color 0.1s;
 }
 .list-item:hover { border-color: var(--card-border-hover); }
@@ -585,8 +585,8 @@ td .inline-loader { padding: 22px 8px; }
 
 /* add candidate modal */
 .modal-wide { max-width: 620px; }
-.add-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
-.add-grid .field { margin-bottom: 10px; }
+.add-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 18px; }
+.add-grid .field { margin-bottom: 0; }
 
 @media (max-width: 720px) {
   .add-grid { grid-template-columns: 1fr; }
