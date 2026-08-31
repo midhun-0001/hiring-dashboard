@@ -243,7 +243,6 @@
 
   var VIEW_MAP = {
     dashboard: "view-dashboard",
-    roles: "view-roles",
     applicants: "view-applicants",
     interviews: "view-interviews",
     "role-detail": "view-role-detail",
@@ -270,7 +269,6 @@
     skeletonStats();
     skeletonChart();
     skeletonRoles("roles-grid", 6);
-    skeletonRoles("roles-grid-2", 6);
     skeletonList("dashboard-upcoming", 3);
     skeletonList("dashboard-completed", 3);
     // Let the branded overlay play briefly, then hand off to the skeletons
@@ -281,9 +279,7 @@
       renderStats(data.stats);
       renderRoleChart(data.roles);
       renderRoles("roles-grid", data.roles);
-      renderRoles("roles-grid-2", data.roles);
       $("roles-count").textContent = data.roles.length + " role" + (data.roles.length === 1 ? "" : "s");
-      $("roles-count-2").textContent = data.roles.length + " role" + (data.roles.length === 1 ? "" : "s");
       renderDashboardInterviews(data);
       setUpdated();
       hideLoading();
@@ -294,9 +290,8 @@
       hideLoading();
       hideRoleLoader();
       renderStats({ openRoles: 0, closedRoles: 0, totalApplicants: 0 });
-      ["roles-grid", "roles-grid-2", "roles-chart", "dashboard-upcoming", "dashboard-completed"].forEach(function (id) { skelOff($(id)); });
+      ["roles-grid", "roles-chart", "dashboard-upcoming", "dashboard-completed"].forEach(function (id) { skelOff($(id)); });
       $("roles-grid").innerHTML = '<div class="empty">Could not load roles.</div>';
-      $("roles-grid-2").innerHTML = '<div class="empty">Could not load roles.</div>';
       $("roles-chart").innerHTML = '<div class="empty">Could not load chart.</div>';
       $("dashboard-upcoming").innerHTML = '<div class="empty">Could not load interviews.</div>';
       $("dashboard-completed").innerHTML = '';
@@ -1040,7 +1035,6 @@
       goView(b.dataset.view);
       if (b.dataset.view === "applicants" && !state.allApplicants.length) loadAllApplicants();
       if (b.dataset.view === "interviews") renderInterviewsPage();
-      if (b.dataset.view === "roles") renderRoles("roles-grid-2", (state.dashboard && state.dashboard.roles) || []);
     });
   });
 
