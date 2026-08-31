@@ -301,18 +301,29 @@ function extractDate_(s) {
  * ============================================================ */
 
 // Attach applicantCount to each role from the single Applicants tab
-// (count rows whose Role column matches the role title).
+// (count rows whose Role column matches the role title) plus lastActivityRow,
+// then order roles dynamically: more applicants first, ties broken by the most
+// recent applicant (higher sheet row = more recently added/updated).
 function withCounts_(roles) {
   var all = readApplicants_();
   roles.forEach(function (r) {
-    var n = 0;
+    var n = 0, lastRow = 0;
     for (var j = 0; j < all.length; j++) {
       var a = all[j];
       if ((normTitle_(a.roleTitle) === normTitle_(r.title)) ||
-          (r.id && norm_(a.roleTitle).toLowerCase() === norm_(r.id).toLowerCase())) n++;
+          (r.id && norm_(a.roleTitle).toLowerCase() === norm_(r.id).toLowerCase())) {
+        n++;
+        if (a.row && a.row > lastRow) lastRow = a.row;
+      }
     }
     r.applicantCount = n;
+    r.lastActivityRow = lastRow;
     r.tab = r.title;
+  });
+  roles.sort(function (x, y) {
+    var dx = (y.applicantCount || 0) - (x.applicantCount || 0); // primary: more applicants
+    if (dx !== 0) return dx;
+    return (y.lastActivityRow || 0) - (x.lastActivityRow || 0); // tie-break: most recent
   });
   return roles;
 }
