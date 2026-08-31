@@ -85,6 +85,34 @@ function isYes_(v) { var s = norm_(v).toLowerCase(); return s==="yes"||s==="y"||
 function text_(v) { return { value: String(v === undefined || v === null ? "" : v) }; }
 
 /* ============================================================
+ * Response cache - avoids re-reading every sheet on heavy views.
+ * Dashboard/interviews results are cached for TTL seconds; any
+ * write (update/add/delete/calendar) clears the cache so changes
+ * appear on the next load.
+ * ============================================================ */
+var CACHE_KEY = "hiring_dashboard_v1";
+var CACHE_EXPIRES = 30;
+
+function cacheGet_() {
+  try {
+    var data = CacheService.getScriptCache().get(CACHE_KEY);
+    return data ? JSON.parse(data) : null;
+  } catch (e) {
+    return null;
+  }
+}
+function cachePut_(obj) {
+  try {
+    CacheService.getScriptCache().put(CACHE_KEY, JSON.stringify(obj), CACHE_EXPIRES);
+  } catch (e) {}
+}
+function cacheClear_() {
+  try {
+    CacheService.getScriptCache().remove(CACHE_KEY);
+  } catch (e) {}
+}
+
+/* ============================================================
  * Tab discovery - every sheet except "Roles" is an applicant tab
  * ============================================================ */
 
@@ -620,7 +648,11 @@ function doGet(e) {
     var action = p.action || "dashboard";
 
     if (action === "dashboard") {
-      return json_(buildDashboard_());
+      var cached = cacheGet_();
+      if (cached) return json_(cached);
+      var dash = buildDashboard_();
+      cachePut_(dash);
+      return json_(dash);
 
     } else if (action === "roles") {
       return json_(withCounts_(readRoles_()));
@@ -644,9 +676,11 @@ function doGet(e) {
       return json_(hit);
 
     } else if (action === "interviews") {
-      return json_(buildDashboard_().interviews);
+      var ics = cacheGet_();
+      return json_(ics ? ics.interviews : buildDashboard_().interviews);
 
     } else if (action === "update") {
+      cacheClear_();
       var uid = p.id || "";
       var field = p.field || p.col || "";
       var val = p.value !== undefined ? p.value : "";
@@ -663,6 +697,7 @@ function doGet(e) {
       return json_({ ok: true, tab: loc.tab, row: loc.row, field: field, value: String(val) });
 
     } else if (action === "addapplicant") {
+      cacheClear_();
       var arole = p.role || "";
       var atab = tabForRole_(arole);
       if (!atab) throw new Error("no applicant sheet found for role: " + arole);
@@ -671,6 +706,7 @@ function doGet(e) {
       return json_({ ok: true, tab: atab, row: data.row, id: data.id, applicant: data.applicant });
 
     } else if (action === "deletecandidate") {
+      cacheClear_();
       var did = p.id || "";
       var dtab = p.tab || "";
       var dloc = dtab ? findInTab_(dtab, did) : locateApplicant_(did);
@@ -688,14 +724,17 @@ function doGet(e) {
       return json_({ events: evs, upcoming: upcoming, past: past });
 
     } else if (action === "calendarcreate") {
+      cacheClear_();
       var ce = createCalendarEvent_(p);
       return json_({ ok: true, eventId: ce.eventId, event: ce });
 
     } else if (action === "calendarupdate") {
+      cacheClear_();
       var ue = updateCalendarEvent_(p);
       return json_({ ok: true, eventId: ue.eventId, event: ue });
 
     } else if (action === "calendarcancel") {
+      cacheClear_();
       return json_(cancelCalendarEvent_(p));
 
     } else {
