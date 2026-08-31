@@ -569,6 +569,7 @@ td .inline-loader { padding: 22px 8px; }
 .detail-item .cedit, .review-item .cedit { width: 100%; margin-top: 2px; }
 .review-item .v { white-space: normal; }
 .table .pipe-review { width: 100%; min-width: 140px; padding: 6px 10px; font-size: 13px; }
+.table .status-select { min-width: 120px; padding: 6px 8px; font-size: 13px; cursor: pointer; }
 
 /* interview list items in the rail */
 .list { padding: 8px; display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }

@@ -595,6 +595,19 @@
     });
   }
 
+  var STATUS_OPTIONS = ["Call", "Cultural fit", "PSR", "Technical 1", "Technical final", "Rejected"];
+
+  function statusOptions(current) {
+    var cur = String(current || "").trim();
+    var opts = STATUS_OPTIONS.slice();
+    // keep the current value if it isn't already in the list or is blank
+    if (cur && opts.indexOf(cur) === -1) opts.unshift(cur);
+    var selected = cur && opts.indexOf(cur) !== -1 ? cur : (opts[0] || "");
+    return opts.map(function (o) {
+      return '<option value="' + esc(o) + '"' + (o === selected ? " selected" : "") + '>' + esc(o) + '</option>';
+    }).join("");
+  }
+
   function renderApplicants() {
     var body = $("applicants-body");
     var empty = $("applicants-empty");
@@ -602,19 +615,40 @@
     empty.classList.toggle("hidden", list.length !== 0);
     if (!list.length) { body.innerHTML = ""; return; }
     body.innerHTML = list.map(function (a) {
-      var b = statusBadge(a.status);
       return '<tr class="clickable" data-id="' + esc(a.id) + '">' +
         '<td><div class="cell-primary">' + esc(a.name) + '</div><div class="cell-sub">' + esc(a.id || "") + '</div></td>' +
         '<td>' + esc(a.roleTitle) + '</td>' +
         '<td>' + esc(a.experience || "—") + '</td>' +
         '<td>' + esc(a.ctc || "—") + '</td>' +
         '<td>' + esc(priorityLabel(a.priority)) + '</td>' +
-        '<td><span class="badge ' + b.cls + '">' + esc(b.label) + '</span></td>' +
+        '<td><select class="input status-select" data-id="' + esc(a.id) + '" data-prev="' + esc(a.status || "") + '" title="Change status">' + statusOptions(a.status) + '</select></td>' +
         '<td>' + esc(a.time || "—") + '</td>' +
       '</tr>';
     }).join("");
     body.querySelectorAll("tr").forEach(function (tr) {
-      tr.addEventListener("click", function () { openCandidate(tr.dataset.id); });
+      tr.addEventListener("click", function (e) {
+        if (e.target && e.target.closest && e.target.closest(".status-select")) return;
+        openCandidate(tr.dataset.id);
+      });
+    });
+    body.querySelectorAll(".status-select").forEach(function (sel) {
+      sel.addEventListener("click", function (e) { e.stopPropagation(); });
+      sel.addEventListener("change", function () {
+        var id = sel.dataset.id;
+        var prev = sel.dataset.prev;
+        sel.disabled = true;
+        API.update(id, "status", sel.value).then(function () {
+          toast("Status updated");
+          sel.disabled = false;
+          sel.dataset.prev = sel.value;
+          loadDashboard();
+          if (state.allApplicants.length) loadAllApplicants();
+        }).catch(function (err) {
+          sel.disabled = false;
+          if (prev !== undefined) sel.value = prev;
+          showError(err);
+        });
+      });
     });
   }
 
