@@ -160,6 +160,10 @@
       '</div>') + '</div>');
   }
 
+  function skeletonLine() {
+    skelOn($("interviews-line"), '<div class="skel" style="height:110px;border-radius:8px"></div>');
+  }
+
   /* Candidate profile: mirrors the four groups renderCandidate builds
      (Candidate / Application / Reviews / Interview) plus the action row. */
   function skeletonCandidate() {
@@ -269,6 +273,7 @@
     showRoleLoader();
     skeletonStats();
     skeletonChart();
+    skeletonLine();
     skeletonRoles("roles-grid", 6);
     skeletonRoles("roles-grid-2", 6);
     skeletonList("dashboard-upcoming", 3);
@@ -280,6 +285,7 @@
       state.dashboard = data;
       renderStats(data.stats);
       renderRoleChart(data.roles);
+      renderInterviewsLine(data);
       renderRoles("roles-grid", data.roles);
       renderRoles("roles-grid-2", data.roles);
       $("roles-count").textContent = data.roles.length + " role" + (data.roles.length === 1 ? "" : "s");
@@ -294,10 +300,11 @@
       hideLoading();
       hideRoleLoader();
       renderStats({ openRoles: 0, closedRoles: 0, totalApplicants: 0 });
-      ["roles-grid", "roles-grid-2", "roles-chart", "dashboard-upcoming", "dashboard-completed"].forEach(function (id) { skelOff($(id)); });
+      ["roles-grid", "roles-grid-2", "roles-chart", "interviews-line", "dashboard-upcoming", "dashboard-completed"].forEach(function (id) { skelOff($(id)); });
       $("roles-grid").innerHTML = '<div class="empty">Could not load roles.</div>';
       $("roles-grid-2").innerHTML = '<div class="empty">Could not load roles.</div>';
       $("roles-chart").innerHTML = '<div class="empty">Could not load chart.</div>';
+      $("interviews-line").innerHTML = '<div class="empty">Could not load chart.</div>';
       $("dashboard-upcoming").innerHTML = '<div class="empty">Could not load interviews.</div>';
       $("dashboard-completed").innerHTML = '';
       showError(arguments[0]);
@@ -328,6 +335,61 @@
     if (top.length > 1) el.innerHTML += '<div class="chart-legend">Applicants per role</div>';
     if (countEl && top.length < list.length) countEl.textContent = "Top " + top.length + " of " + list.length;
     else if (countEl) countEl.textContent = list.length + " role" + (list.length === 1 ? "" : "s");
+  }
+
+  // Area/line chart: number of interviews per day (last 14 days with data),
+  // built from the dashboard interviews (upcoming + completed). No libs.
+  function renderInterviewsLine(data) {
+    var el = $("interviews-line");
+    if (!el) return;
+    skelOff(el);
+    var countEl = $("line-chart-count");
+    var iv = (data && data.interviews) || {};
+    var pool = (iv.upcoming || []).concat(iv.completed || []).concat(iv.pending || []);
+    var byDay = {};
+    pool.forEach(function (i) {
+      var m = String(i.date || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (!m) return;
+      var key = m[1] + "-" + m[2] + "-" + m[3];
+      byDay[key] = (byDay[key] || 0) + 1;
+    });
+    var keys = Object.keys(byDay).sort();
+    if (!keys.length) { el.innerHTML = '<div class="empty">No interview dates.</div>'; return; }
+    // take last 14 distinct days
+    keys = keys.slice(-14);
+    var vals = keys.map(function (k) { return byDay[k]; });
+    var max = 1; vals.forEach(function (v) { if (v > max) max = v; });
+    var W = 300, H = 90, P = 4;
+    var n = keys.length;
+    var stepX = n > 1 ? (W - P * 2) / (n - 1) : 0;
+    var pt = function (i) {
+      var x = P + (n > 1 ? i * stepX : (W - P * 2) / 2);
+      var y = H - P - (vals[i] / max) * (H - P * 2);
+      return [x, y];
+    };
+    var line = keys.map(function (_, i) { return pt(i).map(function (v) { return v.toFixed(1); }).join(","); }).join(" ");
+    var area = "M" + (P) + " " + (H - P) + " L" + line.replace(/ /g, " L") + " L" + (W - P) + " " + (H - P) + " Z";
+    var dots = keys.map(function (_, i) {
+      var p = pt(i);
+      return '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2.5" class="line-dot"/>';
+    }).join("");
+    var labels = keys.map(function (k, i) {
+      var d = k.split("-");
+      var mnames = ["J","F","M","A","M","J","J","A","S","O","N","D"];
+      return '<div class="line-lab" style="left:' + (pt(i)[0] - 8) + 'px">' + mnames[parseInt(d[1], 10) - 1] + "/" + d[2] + '</div>';
+    }).join("");
+    el.innerHTML =
+      '<svg class="line-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' +
+        '<defs><linearGradient id="lineFill" x1="0" y1="0" x2="0" y2="1">' +
+          '<stop offset="0%" stop-color="var(--brand)" stop-opacity="0.35"/>' +
+          '<stop offset="100%" stop-color="var(--brand)" stop-opacity="0.02"/>' +
+        '</linearGradient></defs>' +
+        '<path d="' + area + '" fill="url(#lineFill)"/>' +
+        '<polyline points="' + line + '" fill="none" stroke="var(--brand)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>' +
+        dots +
+      '</svg>' +
+      '<div class="line-labels">' + labels + '</div>';
+    if (countEl) countEl.textContent = keys.length + " d";
   }
 
   function loadAllApplicants() {
