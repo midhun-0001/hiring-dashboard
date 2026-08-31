@@ -526,6 +526,11 @@ td .inline-loader { padding: 22px 8px; }
 .review-item .v { margin-top: 4px; color: var(--text); white-space: pre-wrap; }
 .review-item .v.not-reviewed { color: var(--muted); font-style: italic; }
 
+/* Inline candidate edits: text boxes inside the detail/review cards */
+.detail-item .cedit, .review-item .cedit { width: 100%; margin-top: 2px; }
+.review-item .v { white-space: normal; }
+.table .pipe-review { width: 100%; min-width: 140px; padding: 6px 10px; font-size: 13px; }
+
 /* ---------- Dashboard layout (main + right rail) ---------- */
 .dash-layout { display: flex; gap: 20px; align-items: flex-start; }
 .dash-main { flex: 1; min-width: 0; }

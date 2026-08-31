@@ -385,13 +385,29 @@
         '<td>' + esc(a.experience || "—") + '</td>' +
         '<td>' + esc(a.ctc || "—") + '</td>' +
         '<td>' + esc(a.phone || "—") + '</td>' +
+        '<td><input class="input pipe-review" data-id="' + esc(a.id) + '" value="' + esc(a.reviewAnisha || "") + '" placeholder="Short review…" title="Type a short review, then press Enter / click away to save" /></td>' +
       '</tr>';
     }).join("");
     el.innerHTML = '<div class="table-wrap"><table class="table">' +
-      '<thead><tr><th>Candidate</th><th>Status</th><th>Experience</th><th>CTC</th><th>Mobile</th></tr></thead>' +
+      '<thead><tr><th>Candidate</th><th>Status</th><th>Experience</th><th>CTC</th><th>Mobile</th><th>Short Review</th></tr></thead>' +
       '<tbody>' + rows + '</tbody></table></div>';
     el.querySelectorAll("tbody tr").forEach(function (tr) {
-      tr.addEventListener("click", function () { openCandidate(tr.dataset.id); });
+      tr.addEventListener("click", function (e) {
+        if (e.target && e.target.closest && e.target.closest(".pipe-review")) return;
+        openCandidate(tr.dataset.id);
+      });
+    });
+    el.querySelectorAll(".pipe-review").forEach(function (inp) {
+      inp.addEventListener("click", function (e) { e.stopPropagation(); });
+      inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); inp.blur(); } });
+      inp.addEventListener("change", function () {
+        var id = inp.dataset.id;
+        API.update(id, "reviewAnisha", inp.value).then(function () {
+          toast("Short review saved");
+          loadDashboard();
+          if (state.allApplicants.length) loadAllApplicants();
+        }).catch(showError);
+      });
     });
   }
   // small helper: status badge cell
@@ -486,11 +502,9 @@
     if (!list.length) { body.innerHTML = ""; return; }
     body.innerHTML = list.map(function (a) {
       var b = statusBadge(a.status);
-      var roleD = deptForRole(a.roleTitle) || "—";
       return '<tr class="clickable" data-id="' + esc(a.id) + '">' +
         '<td><div class="cell-primary">' + esc(a.name) + '</div><div class="cell-sub">' + esc(a.id || "") + '</div></td>' +
         '<td>' + esc(a.roleTitle) + '</td>' +
-        '<td>' + esc(roleD) + '</td>' +
         '<td>' + esc(a.experience || "—") + '</td>' +
         '<td>' + esc(a.ctc || "—") + '</td>' +
         '<td>' + esc(priorityLabel(a.priority)) + '</td>' +
@@ -533,30 +547,29 @@
     var sections = [];
 
     var contact = [
-      item("Full Name", esc(c.name)),
-      item("Email", c.email ? '<a href="mailto:' + esc(c.email) + '">' + esc(c.email) + '</a>' : "—"),
-      item("Phone", esc(c.phone || "—")),
-      item("Resume / CV", c.resume ? '<a href="' + esc(c.resume) + '" target="_blank" rel="noopener">View resume</a>' : "—"),
-      item("Experience", esc(c.experience || "—")),
-      item("CTC", esc(c.ctc || "—")),
-      item("Priority", esc(priorityLabel(c.priority)))
+      edit("Full Name", "name", c.name),
+      edit("Email", "email", c.email),
+      edit("Phone", "phone", c.phone),
+      edit("Resume / CV", "resume", c.resume),
+      edit("Experience", "experience", c.experience),
+      edit("CTC", "ctc", c.ctc),
+      edit("Priority", "priority", c.priority)
     ];
     sections.push(group("Candidate", grid(contact)));
 
-    var b = statusBadge(c.status);
     var app = [
       item("Position Applied For", esc(c.roleTitle || c.position || "—")),
-      item("Current Status", '<span class="badge ' + b.cls + '">' + esc(b.label || "—") + '</span>'),
-      item("Time we can go for", esc(c.time || "—"))
+      edit("Current Status", "status", c.status),
+      edit("Time we can go for", "time", c.time)
     ];
     sections.push(group("Application", grid(app)));
 
     var reviews = [
-      review("Review (Anisha)", c.reviewAnisha),
-      review("Interviewer Review 1", c.review1),
-      review("Interviewer Review 2", c.review2),
-      review("Interviewer Review 3", c.review3),
-      review("Interviewer Review 4", c.review4)
+      edit("Review (Anisha)", "reviewAnisha", c.reviewAnisha, { rows: 3 }, "review"),
+      edit("Interviewer Review 1", "review1", c.review1, { rows: 3 }, "review"),
+      edit("Interviewer Review 2", "review2", c.review2, { rows: 3 }, "review"),
+      edit("Interviewer Review 3", "review3", c.review3, { rows: 3 }, "review"),
+      edit("Interviewer Review 4", "review4", c.review4, { rows: 3 }, "review")
     ];
     sections.push(group("Reviews", '<div class="cand-grid">' + reviews.join("") + '</div>'));
 
@@ -575,21 +588,7 @@
 
     $("cand-sections").innerHTML = sections.join("");
 
-    var allowed = ["status", "priority", "time", "ctc", "reviews", "contact"];
-    var buttons = [];
-    allowed.forEach(function (w) {
-      var label = w === "status" ? "Edit Status" :
-        w === "priority" ? "Edit Priority" :
-        w === "time" ? "Edit Time / Scheduling" :
-        w === "ctc" ? "Edit CTC" :
-        w === "contact" ? "Edit Contact" : "Edit Reviews";
-      buttons.push('<button class="btn" data-edit="' + w + '">' + label + '</button>');
-    });
-    buttons.push('<button class="btn btn-danger" id="cand-delete-btn">Delete Candidate</button>');
-    $("cand-actions").innerHTML = buttons.join("");
-    $("cand-actions").querySelectorAll("button[data-edit]").forEach(function (btn) {
-      btn.addEventListener("click", function () { openEdit(btn.dataset.edit); });
-    });
+    $("cand-actions").innerHTML = '<button class="btn btn-danger" id="cand-delete-btn">Delete Candidate</button>';
     var del = $("cand-delete-btn");
     if (del) del.addEventListener("click", function () {
       var name = (c.name || "").trim() || c.id;
@@ -606,10 +605,16 @@
   }
 
   function item(k, v) { return '<div class="detail-item"><div class="k">' + k + '</div><div class="v">' + v + '</div></div>'; }
-  function review(k, v) {
-    var val = String(v || "").trim();
-    if (!val) return '<div class="review-item"><div class="k">' + k + '</div><div class="v not-reviewed">Not reviewed</div></div>';
-    return '<div class="review-item"><div class="k">' + k + '</div><div class="v">' + esc(val) + '</div></div>';
+  // Editable text box inline in the detail card. On change the value is saved
+  // straight to the sheet (no separate edit button / modal).
+  function edit(k, key, val, opts, kind) {
+    opts = opts || {};
+    val = val || "";
+    var box = opts.rows
+      ? '<textarea class="input cedit" data-key="' + esc(key) + '" rows="' + opts.rows + '">' + esc(val) + '</textarea>'
+      : '<input class="input cedit" data-key="' + esc(key) + '" type="text" value="' + esc(val) + '" />';
+    var cls = kind === "review" ? "review-item" : "detail-item";
+    return '<div class="' + cls + '"><div class="k">' + k + '</div><div class="v">' + box + '</div></div>';
   }
   function grid(items) { return '<div class="cand-grid">' + items.join("") + '</div>'; }
   function group(title, inner) { return '<div class="cand-group"><h3>' + title + '</h3>' + inner + '</div>'; }
@@ -1024,6 +1029,31 @@
   $("filter-dept").addEventListener("change", function (e) { state.filters.dept = e.target.value; renderApplicants(); });
   $("filter-status").addEventListener("change", function (e) { state.filters.status = e.target.value; renderApplicants(); });
   $("filter-priority").addEventListener("change", function (e) { state.filters.priority = e.target.value; renderApplicants(); });
+
+  // Inline candidate edits: any .cedit box writes straight to the sheet on change.
+  $("cand-sections").addEventListener("keydown", function (e) {
+    if (e.key !== "Enter") return;
+    var t = e.target;
+    if (!t || !t.classList || !t.classList.contains("cedit")) return;
+    if (t.tagName === "TEXTAREA") return; // Enter = newline in textareas
+    e.preventDefault();
+    t.blur(); // blur fires change -> save
+  });
+  $("cand-sections").addEventListener("change", function (e) {
+    var t = e.target;
+    if (!t || !t.classList || !t.classList.contains("cedit")) return;
+    var c = state.currentCandidate;
+    var key = t.dataset && t.dataset.key;
+    if (!c || !key) return;
+    var val = t.value;
+    if (String(val).trim() === String(c[key] || "").trim()) return;
+    API.update(c.id, key, val).then(function () {
+      c[key] = val;
+      toast("Saved " + key);
+      loadDashboard();
+      if (state.allApplicants.length) loadAllApplicants();
+    }).catch(showError);
+  });
 
   document.querySelectorAll("#iv-seg .seg-btn").forEach(function (b) {
     b.addEventListener("click", function () { goInterviews(b.dataset.iv); });
