@@ -439,14 +439,15 @@
         '<td>' + esc(a.phone || "—") + '</td>' +
         '<td>' + (a.resume ? '<a href="' + esc(a.resume) + '" target="_blank" rel="noopener" class="resume-link" title="Open resume">View</a>' : "—") + '</td>' +
         '<td><input class="input pipe-review" data-id="' + esc(a.id) + '" value="' + esc(a.reviewAnisha || "") + '" placeholder="Short review…" title="Type a short review, then press Enter / click away to save" /></td>' +
+        '<td><button class="btn btn-sm btn-primary cal-schedule-btn" data-cand-id="' + esc(a.id) + '" title="Schedule interview">Schedule</button></td>' +
       '</tr>';
     }).join("");
     el.innerHTML = '<div class="table-wrap"><table class="table">' +
-      '<thead><tr><th>Candidate</th><th>Status</th><th>Experience</th><th>CTC</th><th>Mobile</th><th>Resume</th><th>Short Review</th></tr></thead>' +
+      '<thead><tr><th>Candidate</th><th>Status</th><th>Experience</th><th>CTC</th><th>Mobile</th><th>Resume</th><th>Short Review</th><th></th></tr></thead>' +
       '<tbody>' + rows + '</tbody></table></div>';
     el.querySelectorAll("tbody tr").forEach(function (tr) {
       tr.addEventListener("click", function (e) {
-        if (e.target && e.target.closest && (e.target.closest(".pipe-review") || e.target.closest(".resume-link") || e.target.closest(".pipe-status"))) return;
+        if (e.target && e.target.closest && (e.target.closest(".pipe-review") || e.target.closest(".resume-link") || e.target.closest(".pipe-status") || e.target.closest(".cal-schedule-btn"))) return;
         openCandidate(tr.dataset.id);
       });
     });
@@ -479,6 +480,13 @@
           loadDashboard();
           if (state.allApplicants.length) loadAllApplicants();
         }).catch(showError);
+      });
+    });
+    el.querySelectorAll(".cal-schedule-btn").forEach(function (b) {
+      b.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var a = (state.allApplicants || []).filter(function (x) { return x.id === b.dataset.candId; })[0] || {};
+        openCalendarModal(null, null, a);
       });
     });
   }
@@ -563,6 +571,40 @@
 
   var STATUS_OPTIONS = ["Call", "Cultural fit", "PSR", "Technical 1", "Technical final", "Rejected"];
 
+  // interviewer name -> email. The email is looked up automatically when an
+  // interviewer is chosen in the schedule modal. Lokesh is available for every
+  // role; each role's "Assigned to" name (from the Roles tab) is added too when
+  // it appears here. Fill these in with the real addresses.
+  var INTERVIEWER_EMAILS = {
+    "Lokesh": "lokesh@example.com",
+    "Palaniappan": "palaniappan@example.com"
+  };
+
+  // Names always offered for every candidate, on top of each role's assigned-to.
+  var GLOBAL_INTERVIEWERS = ["Lokesh"];
+
+  // Build the interviewer dropdown for a given candidate object. Returns the
+  // <option> list: the role's assigned-to name(s) (if any) + the global list.
+  function interviewerOptions(candidate) {
+    var names = [];
+    var role = (candidate && candidate.roleTitle) || "";
+    var roles = (state.dashboard && state.dashboard.roles) || [];
+    for (var i = 0; i < roles.length; i++) {
+      if (roles[i].title && roles[i].title.toLowerCase() === role.toLowerCase()) {
+        var at = String(roles[i].assignedTo || "").trim();
+        if (at) names.push(at);
+        break;
+      }
+    }
+    GLOBAL_INTERVIEWERS.forEach(function (n) {
+      if (names.indexOf(n) === -1) names.push(n);
+    });
+    return names.map(function (n) {
+      var em = INTERVIEWER_EMAILS[n] || "";
+      return '<option value="' + esc(n) + '" data-email="' + esc(em) + '">' + esc(n) + (em ? "" : " (add email)") + '</option>';
+    }).join("");
+  }
+
   function statusOptions(current) {
     var cur = String(current || "").trim();
     var opts = STATUS_OPTIONS.slice();
@@ -589,11 +631,12 @@
         '<td>' + esc(priorityLabel(a.priority)) + '</td>' +
         '<td><select class="input status-select" data-id="' + esc(a.id) + '" data-prev="' + esc(a.status || "") + '" title="Change status">' + statusOptions(a.status) + '</select></td>' +
         '<td>' + esc(a.time || "—") + '</td>' +
+        '<td><button class="btn btn-sm btn-primary cal-schedule-btn" data-cand-id="' + esc(a.id) + '" title="Schedule interview">Schedule</button></td>' +
       '</tr>';
     }).join("");
     body.querySelectorAll("tr").forEach(function (tr) {
       tr.addEventListener("click", function (e) {
-        if (e.target && e.target.closest && e.target.closest(".status-select")) return;
+        if (e.target && e.target.closest && (e.target.closest(".status-select") || e.target.closest(".cal-schedule-btn"))) return;
         openCandidate(tr.dataset.id);
       });
     });
@@ -614,6 +657,13 @@
           if (prev !== undefined) sel.value = prev;
           showError(err);
         });
+      });
+    });
+    body.querySelectorAll(".cal-schedule-btn").forEach(function (b) {
+      b.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var a = (state.allApplicants || []).filter(function (x) { return x.id === b.dataset.candId; })[0] || {};
+        openCalendarModal(null, null, a);
       });
     });
   }
@@ -689,7 +739,12 @@
 
     $("cand-sections").innerHTML = sections.join("");
 
-    $("cand-actions").innerHTML = '<button class="btn btn-danger" id="cand-delete-btn">Delete Candidate</button>';
+    $("cand-actions").innerHTML = '<button class="btn btn-primary" id="cand-schedule-btn">Schedule Interview</button>' +
+      '<button class="btn btn-danger" id="cand-delete-btn">Delete Candidate</button>';
+    var sch = $("cand-schedule-btn");
+    if (sch) sch.addEventListener("click", function () {
+      openCalendarModal(null, null, c);
+    });
     var del = $("cand-delete-btn");
     if (del) del.addEventListener("click", function () {
       var name = (c.name || "").trim() || c.id;
@@ -845,7 +900,7 @@
     var fields = {
       candidate: candidate, role: role, date: date, time: time,
       duration: $("cal-duration").value,
-      interviewer: $("cal-interviewer").value.trim(),
+      interviewer: $("cal-interviewer-select").value,
       interviewerEmail: $("cal-interviewer-email").value.trim(),
       invitees: calendarInvitees(),
       notes: $("cal-notes").value.trim()
@@ -887,7 +942,7 @@
     });
   }
 
-  function openCalendarModal(id, pendingId) {
+  function openCalendarModal(id, pendingId, optCandidate) {
     // populate role select
     var roles = (state.dashboard && state.dashboard.roles) || [];
     var sel = $("cal-role");
@@ -906,6 +961,10 @@
     if (pendingId) {
       var cand = (state.allApplicants || []).filter(function (a) { return a.id === pendingId; })[0];
       if (cand) { candidate = cand.name; role = cand.roleTitle || ""; }
+    } else if (optCandidate) {
+      candidate = optCandidate.name || "";
+      role = optCandidate.roleTitle || "";
+      if (candidate && !email) email = optCandidate.email || "";
     }
 
     $("cal-candidate").value = candidate;
@@ -914,8 +973,20 @@
     $("cal-date").value = date;
     $("cal-time").value = time;
     $("cal-duration").value = duration;
-    $("cal-interviewer").value = interviewer;
-    $("cal-interviewer-email").value = email;
+
+    // interviewer dropdown: populated for this candidate's role. When editing,
+    // the previously chosen interviewer is forced in as an option.
+    var ivSel = $("cal-interviewer-select");
+    var ivOpts = interviewerOptions({ roleTitle: role });
+    var ivOptionsHTML = '<option value="">Select interviewer…</option>' + ivOpts;
+    if (interviewer && ivOptionsHTML.indexOf('value="' + interviewer.replace(/"/g, "&quot;") + '"') === -1) {
+      var em = INTERVIEWER_EMAILS[interviewer] || email || "";
+      ivOptionsHTML += '<option value="' + esc(interviewer) + '" data-email="' + esc(em) + '">' + esc(interviewer) + '</option>';
+    }
+    ivSel.innerHTML = ivOptionsHTML;
+    ivSel.value = interviewer || "";
+    $("cal-interviewer-email").value = interviewer ? (INTERVIEWER_EMAILS[interviewer] || email || "") : "";
+
     $("cal-meet").value = meet;
     $("cal-meet").readOnly = !!ev;
     $("cal-notes").value = notes;
@@ -1112,6 +1183,11 @@
   $("cal-cancel").addEventListener("click", cancelInterview);
   $("cal-form").addEventListener("submit", function (e) { e.preventDefault(); calendarSubmit(); });
   $("cal-add-invitee").addEventListener("click", function () { addInviteeRow(inviteeRowHTML("", "")); });
+  $("cal-interviewer-select").addEventListener("change", function () {
+    var opt = this.options[this.selectedIndex];
+    var em = opt ? opt.getAttribute("data-email") || "" : "";
+    $("cal-interviewer-email").value = em;
+  });
 
   /* ---------------- add candidate ---------------- */
 

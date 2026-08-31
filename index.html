@@ -163,7 +163,7 @@
             <thead>
               <tr>
                 <th>Candidate</th><th>Role</th><th>Experience</th>
-                <th>CTC</th><th>Priority</th><th>Status</th><th>Interview / Scheduling</th>
+                <th>CTC</th><th>Priority</th><th>Status</th><th>Interview / Scheduling</th><th></th>
               </tr>
             </thead>
             <tbody id="applicants-body"></tbody>
@@ -280,8 +280,8 @@
           <label class="field"><span>Date *</span><input id="cal-date" class="input" type="date" required /></label>
           <label class="field"><span>Time *</span><input id="cal-time" class="input" type="time" required /></label>
           <label class="field"><span>Duration (min)</span><input id="cal-duration" class="input" type="number" min="5" step="5" value="60" /></label>
-          <label class="field"><span>Interviewer name</span><input id="cal-interviewer" class="input" type="text" /></label>
-          <label class="field"><span>Interviewer email</span><input id="cal-interviewer-email" class="input" type="email" /></label>
+          <label class="field"><span>Interviewer (select)</span><select id="cal-interviewer-select" class="input"><option value="">Select interviewer…</option></select></label>
+          <label class="field"><span>Interviewer email</span><input id="cal-interviewer-email" class="input" type="email" placeholder="auto-filled from selection" /></label>
           <label class="field"><span>Meet link</span><input id="cal-meet" class="input" type="text" placeholder="auto from Google Meet, or paste" /></label>
         </div>
         <div class="invitees-block">
