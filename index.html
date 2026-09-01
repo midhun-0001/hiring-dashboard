@@ -177,16 +177,15 @@
     <section id="view-interviews" class="hidden">
       <section class="panel">
         <div class="panel-head">
-          <h2>Interviews</h2>
+          <h2>Interview Tracker</h2>
           <div class="seg" id="iv-seg">
             <button class="seg-btn active" data-iv="upcoming">Upcoming</button>
-            <button class="seg-btn" data-iv="pending">Pending Scheduling</button>
             <button class="seg-btn" data-iv="completed">Completed</button>
           </div>
           <div class="panel-tools">
             <button id="schedule-btn" class="btn btn-primary btn-sm">
               <svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path fill="currentColor" d="M19 3h-1V1h-2v2H8V1H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 16H5V8h14v11zM7 10h3v3H7v-3zm4 0h3v3h-3v-3zm4 0h2v3h-2v-3z"/></svg>
-              <span>Schedule Interview</span>
+              <span>Add Interview</span>
             </button>
           </div>
         </div>
@@ -264,46 +263,35 @@
     </div>
   </div>
 
-  <!-- calendar / interview scheduling modal -->
+  <!-- interview tracker modal -->
   <div id="calendar-modal" class="modal hidden">
     <div class="modal-card modal-wide">
       <div class="modal-head">
-        <h3 id="cal-title">Schedule Interview</h3>
+        <h3 id="cal-title">Track Interview</h3>
         <button id="cal-close" class="btn btn-ghost btn-sm">&times;</button>
       </div>
       <form id="cal-form">
         <div class="add-grid">
-          <label class="field"><span>Participant 1 · Candidate *</span><input id="cal-candidate" class="input" type="text" required placeholder="" /></label>
-          <label class="field"><span>Candidate email</span><input id="cal-candidate-email" class="input" type="email" placeholder="" /></label>
+          <label class="field"><span>Candidate *</span><input id="cal-candidate" class="input" type="text" required /></label>
+          <label class="field"><span>Candidate email</span><input id="cal-candidate-email" class="input" type="email" /></label>
           <label class="field"><span>Role *</span>
             <select id="cal-role" class="input"><option value="">Select role…</option></select>
           </label>
           <label class="field"><span>Date *</span><input id="cal-date" class="input" type="date" required /></label>
-          <label class="field"><span>Time *</span><input id="cal-time" class="input" type="time" required /></label>
+          <label class="field"><span>Time</span><input id="cal-time" class="input" type="time" /></label>
           <label class="field"><span>Duration (min)</span><input id="cal-duration" class="input" type="number" min="5" step="5" value="60" /></label>
-          <label class="field"><span>Meet link</span><input id="cal-meet" class="input" type="text" placeholder="auto from Google Meet, or paste" /></label>
-        </div>
-        <div id="cal-availability" class="availability hidden"></div>
-        <div class="invitees-block">
-          <div class="invitees-head">
-            <span class="invitees-title">Participant 2 · Interviewer(s)</span>
-            <button type="button" id="cal-add-invitee" class="btn btn-sm btn-ghost">+ Add interviewer</button>
-          </div>
-          <div class="add-grid">
-            <label class="field"><span>Interviewer (choose a team member)</span>
-              <select id="cal-interviewer-select" class="input"><option value="">Select interviewer…</option></select>
-            </label>
-            <label class="field"><span>Or type a name (manual)</span><input id="cal-interviewer" class="input" type="text" placeholder="e.g. John" /></label>
-            <label class="field"><span>Interviewer email</span><input id="cal-interviewer-email" class="input" type="email" placeholder="auto-filled or type" /></label>
-          </div>
-          <div class="invitees-title" style="margin-top:12px">Additional interviewers</div>
-          <div id="cal-invitees"></div>
+          <label class="field"><span>Interviewer</span>
+            <select id="cal-interviewer-select" class="input"><option value="">Select…</option></select>
+          </label>
+          <label class="field"><span>Interviewer name (manual)</span><input id="cal-interviewer" class="input" type="text" placeholder="e.g. Lokesh" /></label>
+          <label class="field"><span>Interviewer email</span><input id="cal-interviewer-email" class="input" type="email" /></label>
+          <label class="field"><span>Status</span><select id="cal-status" class="input"></select></label>
         </div>
         <label class="field"><span>Notes</span><textarea id="cal-notes" class="input" rows="2"></textarea></label>
         <div class="modal-actions">
-          <button type="button" id="cal-cancel" class="btn btn-danger">Cancel Interview</button>
+          <button type="button" id="cal-cancel" class="btn btn-danger">Remove from tracker</button>
           <button type="button" id="cal-close-btn" class="btn btn-ghost">Close</button>
-          <button type="submit" class="btn btn-primary">Add to Sheet / Schedule</button>
+          <button type="submit" class="btn btn-primary">Save to tracker</button>
         </div>
       </form>
     </div>

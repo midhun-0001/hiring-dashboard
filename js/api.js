@@ -117,31 +117,35 @@ var API = (function () {
       return call({ action: "deletecandidate", id: id });
     },
     calendar: function () { return call({ action: "calendar" }); },
-    calendarFreeBusy: function (email, date) { return call({ action: "calendarfreebusy", email: email, date: date }); },
-    calendarCreate: function (f) {
-      var p = { action: "calendarcreate", candidate: f.candidate, role: f.role, date: f.date, time: f.time };
+    tracker: function () { return call({ action: "tracker" }); },
+    trackerCreate: function (f) {
+      var p = { action: "trackercreate", candidate: f.candidate, role: f.role, date: f.date, time: f.time };
       if (f.duration) p.duration = f.duration;
       if (f.candidateEmail) p.candidateEmail = f.candidateEmail;
       if (f.interviewer) p.interviewer = f.interviewer;
       if (f.interviewerEmail) p.interviewerEmail = f.interviewerEmail;
-      if (f.invitees && f.invitees.length) p.invitees = JSON.stringify(f.invitees);
       if (f.notes) p.notes = f.notes;
       return call(p);
     },
-    calendarUpdate: function (id, f) {
-      var p = { action: "calendarupdate", id: id };
+    trackerUpdate: function (id, f) {
+      var p = { action: "trackerupdate", id: id };
+      if (f.candidate) p.candidate = f.candidate;
+      if (f.role) p.role = f.role;
       if (f.date) p.date = f.date;
       if (f.time) p.time = f.time;
       if (f.duration) p.duration = f.duration;
-      if (f.candidateEmail) p.candidateEmail = f.candidateEmail;
-      if (f.interviewer) p.interviewer = f.interviewer;
-      if (f.interviewerEmail) p.interviewerEmail = f.interviewerEmail;
-      if (f.invitees) p.invitees = JSON.stringify(f.invitees);
-      if (f.notes) p.notes = f.notes;
+      if (f.candidateEmail !== undefined) p.candidateEmail = f.candidateEmail;
+      if (f.interviewer !== undefined) p.interviewer = f.interviewer;
+      if (f.interviewerEmail !== undefined) p.interviewerEmail = f.interviewerEmail;
+      if (f.status !== undefined) p.status = f.status;
+      if (f.notes !== undefined) p.notes = f.notes;
       return call(p);
     },
-    calendarCancel: function (id) {
-      return call({ action: "calendarcancel", id: id });
-    }
+    trackerCancel: function (id) {
+      return call({ action: "trackercancel", id: id });
+    },
+    calendarCreate: function (f) { return this.trackerCreate(f); },
+    calendarUpdate: function (id, f) { return this.trackerUpdate(id, f); },
+    calendarCancel: function (id) { return this.trackerCancel(id); }
   };
 })();

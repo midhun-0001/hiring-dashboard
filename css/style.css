@@ -371,43 +371,6 @@ input, select { font-family: inherit; font-size: 14px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); flex: 0 0 auto; }
 #edit-fields .field input, #edit-fields .field select { width: 100%; }
 
-/* ---------- Calendar invitees (expandable participant list) ---------- */
-.availability {
-  border-radius: 10px;
-  padding: 10px 14px;
-  margin-bottom: 14px;
-  font-size: 13px;
-  line-height: 1.5;
-  display: block;
-}
-.availability.hidden { display: none; }
-.availability ul { margin: 6px 0 0; padding-left: 18px; }
-.availability-busy {
-  background: rgba(220, 38, 38, 0.09);
-  border: 1px solid rgba(220, 38, 38, 0.35);
-  color: #b91c1c;
-}
-.availability-ok {
-  background: rgba(34, 197, 94, 0.09);
-  border: 1px solid rgba(34, 197, 94, 0.35);
-  color: #15803d;
-}
-.invitees-block {
-  border: 1px solid var(--border); border-radius: 10px;
-  padding: 12px 14px; margin-bottom: 16px; background: var(--soft);
-}
-.invitees-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  margin-bottom: 10px;
-}
-.invitees-title { font-size: 12.5px; font-weight: 600; color: var(--muted); }
-.invitee-row {
-  display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px;
-  margin-bottom: 8px;
-}
-.invitee-row:last-child { margin-bottom: 0; }
-.invitee-remove { flex: none; }
-
 /* ---------- Modal busy state ----------
    Covers the modal card while a write is in flight: the same orbiting
    satellite used elsewhere, plus a veil so the form can't be re-submitted. */

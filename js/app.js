@@ -439,7 +439,7 @@
         '<td>' + esc(a.phone || "—") + '</td>' +
         '<td>' + (a.resume ? '<a href="' + esc(a.resume) + '" target="_blank" rel="noopener" class="resume-link" title="Open resume">View</a>' : "—") + '</td>' +
         '<td><input class="input pipe-review" data-id="' + esc(a.id) + '" value="' + esc(a.reviewAnisha || "") + '" placeholder="Short review…" title="Type a short review, then press Enter / click away to save" /></td>' +
-        '<td><button class="btn btn-sm btn-primary cal-schedule-btn" data-cand-id="' + esc(a.id) + '" title="Schedule interview">Schedule</button></td>' +
+        '<td><button class="btn btn-sm btn-primary cal-schedule-btn" data-cand-id="' + esc(a.id) + '" title="Add to interview tracker">Track</button></td>' +
       '</tr>';
     }).join("");
     el.innerHTML = '<div class="table-wrap"><table class="table">' +
@@ -486,7 +486,7 @@
       b.addEventListener("click", function (e) {
         e.stopPropagation();
         var a = (state.allApplicants || []).filter(function (x) { return x.id === b.dataset.candId; })[0] || {};
-        openCalendarModal(null, null, a);
+        openCalendarModal(null, a);
       });
     });
   }
@@ -585,7 +585,15 @@
   // Real team members shown in the interviewer dropdown (Participant 2).
   var TEAM_INTERVIEWERS = ["Lokesh", "Palaniappan", "Anurag", "akshaansh"];
 
-  // Build the interviewer <option> list for the schedule modal. Includes the
+  // Statuses available in the tracker modal. "active" and "completed" are the
+  // stored values; the backend also auto-moves past records to the completed
+  // area regardless of this manual status.
+  var TRACKER_STATUSES = [
+    { val: "active", label: "Scheduled" },
+    { val: "completed", label: "Completed" }
+  ];
+
+  // Build the interviewer <option> list for the tracker modal. Includes the
   // team plus an "Other…" entry that lets the user type a free-text name.
   function interviewerOptions() {
     var opts = [
@@ -624,7 +632,7 @@
         '<td>' + esc(priorityLabel(a.priority)) + '</td>' +
         '<td><select class="input status-select" data-id="' + esc(a.id) + '" data-prev="' + esc(a.status || "") + '" title="Change status">' + statusOptions(a.status) + '</select></td>' +
         '<td>' + esc(a.time || "—") + '</td>' +
-        '<td><button class="btn btn-sm btn-primary cal-schedule-btn" data-cand-id="' + esc(a.id) + '" title="Schedule interview">Schedule</button></td>' +
+        '<td><button class="btn btn-sm btn-primary cal-schedule-btn" data-cand-id="' + esc(a.id) + '" title="Add to interview tracker">Track</button></td>' +
       '</tr>';
     }).join("");
     body.querySelectorAll("tr").forEach(function (tr) {
@@ -656,7 +664,7 @@
       b.addEventListener("click", function (e) {
         e.stopPropagation();
         var a = (state.allApplicants || []).filter(function (x) { return x.id === b.dataset.candId; })[0] || {};
-        openCalendarModal(null, null, a);
+        openCalendarModal(null, a);
       });
     });
   }
@@ -732,11 +740,11 @@
 
     $("cand-sections").innerHTML = sections.join("");
 
-    $("cand-actions").innerHTML = '<button class="btn btn-primary" id="cand-schedule-btn">Schedule Interview</button>' +
+    $("cand-actions").innerHTML = '<button class="btn btn-primary" id="cand-schedule-btn">Add to Tracker</button>' +
       '<button class="btn btn-danger" id="cand-delete-btn">Delete Candidate</button>';
     var sch = $("cand-schedule-btn");
     if (sch) sch.addEventListener("click", function () {
-      openCalendarModal(null, null, c);
+      openCalendarModal(null, c);
     });
     var del = $("cand-delete-btn");
     if (del) del.addEventListener("click", function () {
@@ -778,56 +786,39 @@
     renderInterviewsPage();
   }
 
-  // Scheduled interviews come from the Google Calendar-backed Interviews source.
+  // Interview records come from the tracker (Interview Events sheet); past
+  // records are auto-classified as completed by the backend.
   function loadInterviews() {
-    API.calendar().then(function (data) {
+    API.tracker().then(function (data) {
       state.calendar = data;
       if (state.currentView === "interviews") renderInterviewsPage();
-      if ($("calendar-modal") && !$("calendar-modal").classList.contains("hidden")) checkAvailability();
     }).catch(showError);
   }
 
   function renderInterviewsPage() {
     var el = $("interviews-body");
-    if (!state.calendar) { inlineLoading(el, "Loading interviews…"); loadInterviews(); return; }
+    if (!state.calendar) { inlineLoading(el, "Loading interview tracker…"); loadInterviews(); return; }
 
     var cal = state.calendar;
     var seg = state.currentIvSeg;
     var list, emptyMsg;
-    if (seg === "pending") {
-      list = (state.dashboard && state.dashboard.interviews && state.dashboard.interviews.pending) || [];
-      emptyMsg = "No candidates awaiting scheduling.";
-    } else if (seg === "completed") {
+    if (seg === "completed") {
       list = cal.past || [];
-      emptyMsg = "No completed interviews yet.";
+      emptyMsg = "No completed interviews yet. Past interview records move here automatically.";
     } else {
       list = cal.upcoming || cal.events || [];
-      emptyMsg = "No upcoming interviews scheduled yet.";
+      emptyMsg = "No upcoming interviews. Add one to start tracking.";
     }
 
     if (!list.length) { el.innerHTML = '<div class="empty">' + esc(emptyMsg) + '</div>'; return; }
 
     var rows = list.map(function (i) {
-      var canEdit = !!i.eventId;
-      var statusBadgeCls = "badge-blue", statusLabel = "Scheduled";
-      if (seg === "completed") { statusBadgeCls = "badge-green"; statusLabel = "Completed"; }
-      if (seg === "pending") { statusBadgeCls = "badge-amber"; statusLabel = "Scheduling pending"; }
+      var statusBadgeCls = seg === "completed" ? "badge-green" : "badge-blue";
+      var statusLabel = seg === "completed" ? "Completed" : "Scheduled";
 
-      var meet = "";
-      if (i.meet) {
-        meet = '<a href="' + esc(i.meet) + '" target="_blank" rel="noopener" class="meet-link" title="Open Google Meet">Meet</a>';
-      }
-
-      var action;
-      if (i.eventId) {
-        action = canEdit
-          ? '<button class="btn btn-sm btn-ghost" data-edit-evt="' + esc(i.eventId) + '">Edit</button>'
-          : '<span class="cell-sub">View</span>';
-      } else if (seg === "pending") {
-        action = '<button class="btn btn-sm btn-ghost" data-create-evt="' + esc(i.id || "") + '">Schedule</button>';
-      } else {
-        action = "";
-      }
+      var action = i.eventId
+        ? '<button class="btn btn-sm btn-ghost" data-edit-evt="' + esc(i.eventId) + '">Edit</button>'
+        : "";
 
       return '<tr data-id="' + esc(i.id || "") + '">' +
         '<td class="cell-primary">' + esc(i.candidate) + '</td>' +
@@ -835,34 +826,22 @@
         '<td>' + esc(fmtDate(i.date)) + '</td>' +
         '<td>' + esc(fmtTime(i.time)) + '</td>' +
         '<td>' + esc(i.interviewer || "—") + '</td>' +
-        '<td>' + meet + '</td>' +
+        '<td>' + esc(i.duration ? i.duration + " min" : "—") + '</td>' +
         '<td><span class="badge ' + statusBadgeCls + '">' + esc(statusLabel) + '</span></td>' +
         '<td>' + action + '</td>' +
       '</tr>';
     }).join("");
 
     el.innerHTML = '<table class="table"><thead><tr>' +
-      '<th>Candidate</th><th>Role</th><th>Date</th><th>Time</th><th>Interviewer</th><th>Meet</th><th>Status</th><th></th>' +
+      '<th>Candidate</th><th>Role</th><th>Date</th><th>Time</th><th>Interviewer</th><th>Duration</th><th>Status</th><th></th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table>';
 
-    el.querySelectorAll("tbody tr").forEach(function (tr) {
-      tr.addEventListener("click", function (e) {
-        if (e.target.closest && e.target.closest("button")) return; // let action buttons handle it
-        var evtId = tr.querySelector("[data-edit-evt]");
-        if (evtId) { openCalendarModal(evtId.dataset.editEvt); return; }
-        var create = tr.querySelector("[data-create-evt]");
-        if (create) openCalendarModal(null, create.dataset.createEvt);
-      });
-    });
     el.querySelectorAll("[data-edit-evt]").forEach(function (b) {
       b.addEventListener("click", function (e) { e.stopPropagation(); openCalendarModal(b.dataset.editEvt); });
     });
-    el.querySelectorAll("[data-create-evt]").forEach(function (b) {
-      b.addEventListener("click", function (e) { e.stopPropagation(); openCalendarModal(null, b.dataset.createEvt); });
-    });
   }
 
-  /* ---------------- calendar scheduling modal ---------------- */
+  /* ---------------- interview tracker modal ---------------- */
 
   var calEditingId = null; // null = create mode, else an Interview tab row id (eventId)
 
@@ -872,170 +851,47 @@
     return null;
   }
 
-  function calendarInvitees() {
-    var out = [];
-    document.querySelectorAll("#cal-invitees .invitee-row").forEach(function (row) {
-      var name = row.querySelector(".invitee-name").value.trim();
-      var em = row.querySelector(".invitee-email").value.trim();
-      if (name || em) out.push({ name: name, email: em });
-    });
-    return out;
-  }
-
-  function calendarSubmit() {
+  function trackerSubmit() {
     var candidate = $("cal-candidate").value.trim();
     var role = $("cal-role").value;
     var date = $("cal-date").value;
-    var time = $("cal-time").value;
     if (!candidate) { toast("Please enter the candidate name"); return; }
     if (!role) { toast("Please select a role"); return; }
-    if (!date || !time) { toast("Please set the date and time"); return; }
+    if (!date) { toast("Please set a date"); return; }
 
     // Interviewer: the selected team member, or the manually typed name if the
-    // dropdown is on "Other…" / empty.
+    // dropdown is on "__other__" / empty.
     var ivPick = $("cal-interviewer-select").value;
     var ivName = (ivPick && ivPick !== "__other__") ? ivPick : $("cal-interviewer").value.trim();
     var ivEmail = $("cal-interviewer-email").value.trim();
+    if (ivName && !ivEmail && ivPick && ivPick !== "__other__") ivEmail = INTERVIEWER_EMAILS[ivName] || "";
 
     var fields = {
       candidate: candidate,
       candidateEmail: $("cal-candidate-email").value.trim(),
-      role: role, date: date, time: time,
+      role: role, date: date,
+      time: $("cal-time").value,
       duration: $("cal-duration").value,
       interviewer: ivName,
       interviewerEmail: ivEmail,
-      invitees: calendarInvitees(),
+      status: $("cal-status").value,
       notes: $("cal-notes").value.trim()
     };
-    if (fields.candidateEmail && !ivEmail && ivName) fields.interviewerEmail = ivName === "__other__" ? "" : (INTERVIEWER_EMAILS[ivName] || "");
     if (calEditingId) {
-      API.calendarUpdate(calEditingId, fields).then(function () {
-        closeModals(); toast("Interview updated on Google Calendar");
+      API.trackerUpdate(calEditingId, fields).then(function () {
+        closeModals(); toast("Interview record updated");
         API.refresh(); loadDashboard(); loadInterviews();
       }).catch(showError);
     } else {
-      API.calendarCreate(fields).then(function () {
-        closeModals(); toast("Interview scheduled on Google Calendar");
+      API.trackerCreate(fields).then(function () {
+        closeModals(); toast("Interview added to tracker");
         API.refresh(); loadDashboard(); loadInterviews();
         if (state.currentView === "interviews") goInterviews("upcoming");
       }).catch(showError);
     }
   }
 
-  function inviteeRowHTML(name, email) {
-    return '<div class="invitee-row">' +
-      '<input class="input invitee-name" type="text" placeholder="Name" value="' + esc(name || "") + '" />' +
-      '<input class="input invitee-email" type="email" placeholder="Email" value="' + esc(email || "") + '" />' +
-      '<button type="button" class="btn btn-ghost btn-sm invitee-remove" title="Remove">×</button>' +
-    '</div>';
-  }
-
-  function addInviteeRow(html) {
-    var wrap = document.createElement("div");
-    wrap.innerHTML = html;
-    var row = wrap.firstChild;
-    row.querySelector(".invitee-remove").addEventListener("click", function () { row.remove(); });
-    $("cal-invitees").appendChild(row);
-  }
-
-  function renderInvitees(participants) {
-    $("cal-invitees").innerHTML = "";
-    (participants || []).forEach(function (p) {
-      addInviteeRow(inviteeRowHTML(p.name, p.email));
-    });
-  }
-
-  /* ---------------- interviewer availability check ---------------- */
-
-  // All scheduled (non-cancelled) interviews that involve the given interviewer,
-  // matched by name or email against the interviewer field and participant list.
-  function findInterviewsFor(name, email) {
-    var all = ((state.calendar && state.calendar.events) || []);
-    var nl = (name || "").toLowerCase().trim();
-    var el = (email || "").toLowerCase().trim();
-    return all.filter(function (e) {
-      if (e.status === "cancelled") return false;
-      var match = false;
-      if ((e.interviewer || "").toLowerCase() === nl) match = true;
-      if ((e.interviewerEmail || "").toLowerCase() === el) match = true;
-      (e.participants || []).forEach(function (pp) {
-        if (!pp) return;
-        if ((pp.name || "").toLowerCase() === nl || (pp.email || "").toLowerCase() === el) match = true;
-      });
-      return match;
-    });
-  }
-
-  function checkAvailability() {
-    var box = $("cal-availability");
-    if (!box) return;
-    var date = $("cal-date").value;
-    var time = $("cal-time").value;
-    if (!date || !time) { box.className = "availability hidden"; return; }
-    var dur = parseInt($("cal-duration").value, 10) || 60;
-    var ivPick = $("cal-interviewer-select").value;
-    var ivName = (ivPick && ivPick !== "__other__") ? ivPick : $("cal-interviewer").value.trim();
-    var ivEmail = $("cal-interviewer-email").value.trim();
-    if (!ivName && !ivEmail) { box.className = "availability hidden"; return; }
-
-    var start = new Date(date + "T" + time + ":00");
-
-    // 1) Local conflict check against this site's own scheduled interviews.
-    var mine = findInterviewsFor(ivName, ivEmail);
-    var busySelf = mine.filter(function (e) {
-      if (!e.date || !e.time) return false;
-      var es = new Date(e.date + "T" + e.time + ":00");
-      if (isNaN(es.getTime())) return false;
-      var ee = new Date(es.getTime() + ((e.duration || 60) * 60000));
-      return start < ee && es < new Date(start.getTime() + dur * 60000);
-    });
-
-    // 2) Real Google Calendar free/busy from the backend (their shared calendar).
-    if (ivEmail) {
-      box.className = "availability";
-      box.innerHTML = '<strong>' + esc(ivName || ivEmail) + '</strong> on ' + esc(fmtDate(date)) + '… checking calendar';
-      API.calendarFreeBusy(ivEmail, date).then(function (fb) {
-        if (!fb.accessible) {
-          box.className = "availability availability-busy";
-          box.innerHTML = '<strong>' + esc(ivName || ivEmail) + '</strong>: ' + esc(fb.message || "calendar not accessible");
-          return;
-        }
-        var busy = fb.busy || [];
-        var cc = busySelf.map(function (e) {
-          return esc(e.candidate) + ' ' + esc(fmtTime(e.time));
-        });
-        if (busy.length) {
-          box.className = "availability availability-busy";
-          box.innerHTML = '<strong>' + esc(ivName || ivEmail) + '</strong> is occupied on ' + esc(fmtDate(date)) +
-            ':<ul>' + busy.map(function (b) {
-              return '<li>' + esc(fmtTime(b.start.split(" ")[1])) + ' – ' + esc(fmtTime(b.end.split(" ")[1])) + ' · ' + esc(b.title || "Busy") + '</li>';
-            }).join("") + (cc.length ? '<li class="av-self">Site schedule overlaps: ' + cc.join("; ") + '</li>' : "") + '</ul>';
-        } else {
-          box.className = "availability availability-ok";
-          box.innerHTML = '<strong>' + esc(ivName || ivEmail) + '</strong> appears free on ' + esc(fmtDate(date)) +
-            (cc.length ? '. Note: another site interview overlaps (' + cc.join("; ") + ').' : '');
-        }
-      }).catch(function () {
-        box.className = "availability availability-ok";
-        box.innerHTML = '<strong>' + esc(ivName || ivEmail) + '</strong>: could not reach calendar.';
-      });
-      return;
-    }
-
-    // No email -> fall back to the site-only check.
-    if (busySelf.length) {
-      box.className = "availability availability-busy";
-      box.innerHTML = '<strong>' + esc(ivName) + '</strong> is already booked in this site at this time:\n' +
-        '<ul>' + busySelf.map(function (e) {
-          return '<li>' + esc(e.candidate || "") + ' · ' + esc(fmtDate(e.date)) + ' ' + esc(fmtTime(e.time)) + ' (' + (e.duration || 60) + ' min)</li>';
-        }).join("") + '</ul>';
-      return;
-    }
-    box.className = "availability availability-ok";
-    box.innerHTML = '<strong>' + esc(ivName) + '</strong> has no site interview at this time (add their email to check the Google calendar).';
-  }
-
-  function openCalendarModal(id, pendingId, optCandidate) {
+  function openCalendarModal(id, optCandidate) {
     // populate role select
     var roles = (state.dashboard && state.dashboard.roles) || [];
     var sel = $("cal-role");
@@ -1043,37 +899,37 @@
       return '<option value="' + esc(r.title) + '">' + esc(r.title) + '</option>';
     }).join("");
 
-    $("cal-title").textContent = id ? "Edit Interview" : "Schedule Interview";
+    $("cal-title").textContent = id ? "Edit Interview" : "Add Interview";
     $("cal-cancel").classList.toggle("hidden", !id);
     calEditingId = id || null;
 
     var ev = id ? findCalEvent(id) : null;
-    var candidate = "", candEmail = "", role = "", date = "", time = "", duration = "60", interviewer = "", email = "", meet = "", notes = "", participants = [];
-    if (ev) { candidate = ev.candidate; candEmail = ev.candidateEmail || ""; role = ev.role || ""; date = ev.date || ""; time = ev.time || ""; duration = ev.duration || "60"; interviewer = ev.interviewer || ""; email = ev.interviewerEmail || ""; meet = ev.meet || ""; notes = ev.notes || ""; participants = ev.participants || []; }
-
-    if (pendingId) {
-      var cand = (state.allApplicants || []).filter(function (a) { return a.id === pendingId; })[0];
-      if (cand) { candidate = cand.name; candEmail = cand.email || ""; role = cand.roleTitle || ""; }
-    } else if (optCandidate) {
-      candidate = optCandidate.name || "";
-      role = optCandidate.roleTitle || "";
-      candEmail = optCandidate.email || "";
-      // If the row has no email, still auto-fill the name (don't block).
+    var candidate = "", candEmail = "", role = "", date = "", time = "", duration = "60",
+        interviewer = "", email = "", status = "active", notes = "";
+    if (ev) {
+      candidate = ev.candidate; candEmail = ev.candidateEmail || ""; role = ev.role || "";
+      date = ev.date || ""; time = ev.time || ""; duration = ev.duration || "60";
+      interviewer = ev.interviewer || ""; email = ev.interviewerEmail || "";
+      status = ev.status && ev.status !== "cancelled" ? ev.status : "active"; notes = ev.notes || "";
+    }
+    if (optCandidate) {
+      candidate = candidate || optCandidate.name || "";
+      role = role || optCandidate.roleTitle || "";
+      candEmail = candEmail || optCandidate.email || "";
     }
 
     $("cal-candidate").value = candidate;
     $("cal-candidate").readOnly = !!ev;
-    $("cal-candidate").placeholder = candidate || "Candidate full name";
+    $("cal-candidate").placeholder = candidate ? "" : "Candidate full name";
     $("cal-candidate-email").value = candEmail;
     $("cal-candidate-email").readOnly = !!ev;
-    $("cal-candidate-email").placeholder = candEmail || "name@example.com";
+    $("cal-candidate-email").placeholder = candEmail ? "" : "name@example.com";
     if (role) sel.value = role;
     $("cal-date").value = date;
     $("cal-time").value = time;
     $("cal-duration").value = duration;
 
-    // Interviewer (Participant 2): dropdown of team members + "Other…" for free
-    // text. Selecting a team member auto-fills the email from the map.
+    // Interviewer: dropdown of team members + "Other…" for free text.
     var ivSel = $("cal-interviewer-select");
     var ivNameField = $("cal-interviewer");
     var ivEmailField = $("cal-interviewer-email");
@@ -1085,7 +941,6 @@
       ivNameField.value = "";
       ivEmailField.value = INTERVIEWER_EMAILS[interviewer] || email || "";
     } else if (interviewer) {
-      // previously-chosen free-text interviewer -> route through "Other…"
       ivSel.value = "__other__";
       ivNameField.value = interviewer;
       ivEmailField.value = email || "";
@@ -1095,27 +950,20 @@
       ivEmailField.value = "";
     }
 
-    $("cal-meet").value = meet;
-    $("cal-meet").readOnly = !!ev;
+    $("cal-status").innerHTML = TRACKER_STATUSES.map(function (o) {
+      return '<option value="' + esc(o.val) + '"' + (o.val === status ? " selected" : "") + '>' + esc(o.label) + '</option>';
+    }).join("");
     $("cal-notes").value = notes;
 
-    renderInvitees(participants);
-
     $("calendar-modal").classList.remove("hidden");
-    if (participants.length === 0) addInviteeRow(inviteeRowHTML("", ""));
-
-    // Availability check needs the full list of scheduled interviews; load it on
-    // demand if the Interviews view hasn't been opened yet.
-    if (!state.calendar) loadInterviews();
-    checkAvailability();
   }
 
-  function cancelInterview() {
+  function removeInterview() {
     if (!calEditingId) return;
     var ev = findCalEvent(calEditingId) || {};
-    if (!window.confirm('Cancel the interview with "' + (ev.candidate || "this candidate") + '"? This removes it from Google Calendar.')) return;
-    API.calendarCancel(calEditingId).then(function () {
-      closeModals(); toast("Interview cancelled");
+    if (!window.confirm('Remove the interview with "' + (ev.candidate || "this candidate") + '" from the tracker?')) return;
+    API.trackerCancel(calEditingId).then(function () {
+      closeModals(); toast("Interview removed from tracker");
       API.refresh(); loadDashboard(); loadInterviews();
     }).catch(showError);
   }
@@ -1293,9 +1141,8 @@
   $("schedule-btn").addEventListener("click", function () { openCalendarModal(null); });
   $("cal-close").addEventListener("click", closeModals);
   $("cal-close-btn").addEventListener("click", closeModals);
-  $("cal-cancel").addEventListener("click", cancelInterview);
-  $("cal-form").addEventListener("submit", function (e) { e.preventDefault(); calendarSubmit(); });
-  $("cal-add-invitee").addEventListener("click", function () { addInviteeRow(inviteeRowHTML("", "")); });
+  $("cal-cancel").addEventListener("click", removeInterview);
+  $("cal-form").addEventListener("submit", function (e) { e.preventDefault(); trackerSubmit(); });
   $("cal-interviewer-select").addEventListener("change", function () {
     var v = this.value;
     var nameField = $("cal-interviewer");
@@ -1309,13 +1156,7 @@
       nameField.value = "";
       emailField.value = "";
     }
-    checkAvailability();
   });
-  ["cal-date", "cal-time", "cal-duration"].forEach(function (id) {
-    $(id).addEventListener("change", checkAvailability);
-  });
-  $("cal-interviewer").addEventListener("input", checkAvailability);
-  $("cal-interviewer-email").addEventListener("input", checkAvailability);
   $("cal-candidate").addEventListener("input", function () {
     if (!$("cal-candidate").value) $("cal-candidate").placeholder = "Candidate full name";
   });

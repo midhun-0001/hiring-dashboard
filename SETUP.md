@@ -64,10 +64,13 @@ dashboard by anyone with the link).
 
 ### `Interview Events` tab (created automatically)
 
-Interview scheduling writes an 11-column calendar-event row
-(`Calendar Event ID | Candidate | Role | Date | Time | Duration | Interviewer
-Name | Interviewer Email | Meet Link | Status | Notes`) to a tab named
-**`Interview Events`**, created on first use. Do not point
+The interview **tracker** stores a 13-column record
+(`Event ID | Candidate | Role | Date | Time | Duration | Interviewer
+Name | Interviewer Email | Meet Link | Status | Notes | Participants | Candidate Email`)
+to a tab named
+**`Interview Events`**, created on first use. It is tracker-only: no Google
+Calendar events are created. Any record whose scheduled date+time has passed is
+automatically classified as **past/completed** by the backend. Do not point
 `SETTINGS.INTERVIEWS_TAB_NAME` at a tab that already holds applicant data —
 `saveInterviewRow_` overwrites whole rows.
 
@@ -158,11 +161,11 @@ GitHub Pages rebuilds automatically (it already serves this `master` branch root
 > **Important:** the dashboard talks to your Apps Script Web App (`/exec` URL,
 > embedded as the default in `js/api.js`). That Apps Script must be **deployed
 > with the current `Code.gs`** (see Deploy section) for the newest features
-> (Add Candidate, Latest Completed, **interview scheduling / calendar CRUD**,
-> **Delete Candidate**) to work — the frontend is live on Pages, but a stale Apps
-> Script deployment won't expose those endpoints. After re-deploying, also
-> **authorise the Google Calendar scope** so the `calendarcreate` /
-> `calendarupdate` / `calendarcancel` actions can create meetings.
+> (Add Candidate, Latest Completed, **interview tracker**, **Delete Candidate**)
+> to work — the frontend is live on Pages, but a stale Apps
+> Script deployment won't expose those endpoints. After re-deploying, no Calendar
+> OAuth scope is needed — interviews are tracker-only records in the sheet (no
+> Google Calendar events are created).
 
 ### Option B — host on your network
 
@@ -198,10 +201,11 @@ to free static hosting (Netlify / Vercel / GitHub Pages) and share that URL.
 | `applicants` | — | All applicants across every role tab |
 | `candidate` | `id` | One applicant's full record (all 5 reviews) |
 | `interviews` | — | `{ upcoming, pending, completed, recentCompleted }` |
-| `calendar` | — | `{ events, upcoming, past }` from the `Interviews` tab / Google Calendar |
-| `calendarcreate` | `candidate`,`role`,`date`,`time`,`duration`,`interviewer`,`interviewerEmail`,`notes` | Creates a Google Calendar event + appends to the `Interviews` tab |
-| `calendarupdate` | `id`, … | Updates an existing scheduled interview (event + row) |
-| `calendarcancel` | `id` | Cancels/deletes the calendar event (marks the row cancelled) |
+| `calendar` | — | `{ events, upcoming, past }` from the `Interview Events` tab (tracker) |
+| `tracker` | — | Alias of `calendar` — `{ events, upcoming, past }` |
+| `trackercreate` | `candidate`,`candidateEmail`,`role`,`date`,`time`,`duration`,`interviewer`,`interviewerEmail`,`notes` | Adds a tracker record to the `Interview Events` tab (no calendar event) |
+| `trackerupdate` | `id`, … | Updates an existing tracker record |
+| `trackercancel` | `id` | Marks a tracker record cancelled (removed from lists) |
 | `update` | `id`, `field`, `value` | Writes one field back (no permission check) |
 | `addapplicant` | `role`, `name`, `email`, … | Appends a new applicant row to the role's tab |
 | `deletecandidate` | `id` | Deletes the applicant's row from its tab |

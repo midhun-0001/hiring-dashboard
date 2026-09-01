@@ -33,7 +33,8 @@
  *   ?action=interviews                -> upcoming / pending / completed
  *   ?action=update&id=APP123&field=status&value=.. -> update one field
  *   ?action=calendar                  -> scheduled interviews (upcoming / past)
- *   ?action=calendarcreate/update/cancel -> create/reschedule/cancel an event
+ *   ?action=tracker                   -> interview tracker (upcoming / past, alias of calendar)
+ *   ?action=trackercreate/update/cancel -> add/edit/remove a tracker record
  *   ?action=addapplicant              -> append a new applicant row
  *   ?action=deletecandidate           -> delete an applicant row
  *
@@ -42,15 +43,10 @@
  * credentials; the client only sees the /exec URL.
  */
 
-// Run this ONCE in the Apps Script editor (select it in the function dropdown
-// and press Run) to grant the Calendar OAuth scope. Without this the Web App
-// throws "The script does not have permission to perform that action.
-// Required permissions: .../auth/calendar" when scheduling. After running it,
-// re-deploy the Web App (Deploy > New deployment) to bake in the scope.
-function authorizeCalendar() {
-  var cal = CalendarApp.getDefaultCalendar();
-  return "Authorized as: " + (cal.getName ? cal.getName() : cal.getId());
-}
+// NOTE: this project is tracker-only — interview records are stored in the
+// Interview Events sheet and no real Google Calendar events are created. The
+// auto-completion logic in the tracker/calendar list action moves any record
+// whose scheduled date+time has passed into the "past"/completed area.
 
 var SETTINGS = {
   ROLES_TAB_NAME: "Roles",
@@ -64,18 +60,17 @@ var SETTINGS = {
     experience:6, ctc:7, priority:8, status:9, time:10,
     reviewAnisha:11, review1:12, review2:13, review3:14, review4:15
   },
-  // Google Calendar / interview scheduling. CALENDAR_ID empty -> the Apps
-  // Script account's default calendar is used. Events are referenced from a
-  // dedicated "Interviews" tab (source of truth for scheduled interviews).
-  // NOTE: must NOT be an existing data tab. The sheet's "Interviews" tab holds
-  // a copy of the applicant data, and saveInterviewRow_ writes the 11-column
-  // calendar-event schema below - pointing at it would overwrite applicants.
-  // This tab is created on demand with the correct header.
+  // Interview tracker. Records are stored in a dedicated "Interview Events"
+  // tab (source of truth). No Google Calendar events are created. NOTE: must
+  // NOT be an existing data tab. The sheet's "Interviews" tab holds a copy of
+  // the applicant data, so we point at a separate "Interview Events" tab. This
+  // tab is created on demand with the correct header.
   INTERVIEWS_TAB_NAME: "Interview Events",
   CALENDAR_ID: "",
-  // Events tab: A Calendar Event ID | B Candidate | C Role | D Date | E Time
+  // Events tab: A Event ID | B Candidate | C Role | D Date | E Time
   //             F Duration (min) | G Interviewer Name | H Interviewer Email
   //             I Meet Link | J Status (active/cancelled) | K Notes
+  //             L Participants | M Candidate Email
   INTERVIEWS_COLS: {
     eventId:0, candidate:1, role:2, date:3, time:4, duration:5,
     interviewer:6, interviewerEmail:7, meet:8, status:9, notes:10, participants:11, candidateEmail:12
@@ -434,73 +429,13 @@ function locateApplicant_(id, preferredTab) {
 }
 
 /* ============================================================
- * Google Calendar + Interview scheduling
+ * Interview tracker (Interview Events sheet)
  * ============================================================
- * Uses the built-in CalendarApp service (no passwords stored; the Apps Script
- * runs as its own account). Interview events live on a Google Calendar and are
- * referenced from an "Interviews" tab in the sheet (Event ID, candidate, role,
- * date, time, interviewer, Meet link, status). CalendarApp must be authorized
- * on re-deploy.
+ * Tracker-only: interview records live in the "Interview Events" tab of the
+ * sheet (Event ID, candidate, role, date, time, duration, interviewer,
+ * interviewer email, Meet link, status, notes, participants, candidate email).
+ * No real Google Calendar events are created and no invite emails are sent.
  * ============================================================ */
-
-function cal_() {
-  var id = norm_(SETTINGS.CALENDAR_ID);
-  return id ? CalendarApp.getCalendarById(id) : CalendarApp.getDefaultCalendar();
-}
-
-// Free/busy for one interviewer on one day. Resolves the person's calendar by
-// email (their Google calendar must be shared with the Apps Script account) and
-// returns the day's occupied slots plus gaps where they look free.
-function calendarFreeBusy_(p) {
-  var email = norm_(p.email || p.interviewerEmail);
-  var date = norm_(p.date);
-  if (!email) throw new Error("interviewer email required");
-  var d = String(date).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (!d) throw new Error("valid date required");
-  var dayStart = new Date(parseInt(d[1], 10), parseInt(d[2], 10) - 1, parseInt(d[3], 10), 0, 0, 0);
-  var dayEnd = new Date(dayStart.getTime() + 86400000);
-
-  var cal;
-  try { cal = CalendarApp.getCalendarById(email); } catch (e) { cal = null; }
-  // Fall back to the default calendar if the email is blank/owner.
-  if (!cal) {
-    var def = CalendarApp.getDefaultCalendar();
-    if (norm_(def.getId()).toLowerCase() === email.toLowerCase()) cal = def;
-    else cal = null;
-  }
-  if (!cal) {
-    return json_({ ok: false, accessible: false, email: email, date: date,
-      message: "Cannot read " + email + "'s calendar. It must be shared with the Apps Script account." });
-  }
-
-  var events;
-  try { events = cal.getEvents(dayStart, dayEnd); } catch (e) { events = []; }
-  var busy = (events || []).map(function (ev) {
-    var et = ev.getTitle ? ev.getTitle() : "";
-    return {
-      title: norm_(et),
-      start: toIso_(ev.getStartTime()),
-      end: toIso_(ev.getEndTime())
-    };
-  });
-  busy.sort(function (a, b) { return (a.start).localeCompare(b.start); });
-
-  // Build the free slots (9:00 - 18:00) that don't overlap any busy event.
-  var dayStartIso = toIso_(new Date(dayStart.getTime() + 9 * 3600000));
-  var dayEndIso = toIso_(new Date(dayStart.getTime() + 18 * 3600000));
-  var free = [];
-  var cursor = dayStartIso;
-  for (var i = 0; i < busy.length; i++) {
-    var b = busy[i];
-    if (b.end < cursor) continue;                 // fully before current gap
-    if (b.start > cursor && b.start < dayEndIso) free.push({ start: cursor, end: b.start });
-    if (b.end > cursor) cursor = b.end > dayEndIso ? dayEndIso : b.end;
-  }
-  if (cursor < dayEndIso) free.push({ start: cursor, end: dayEndIso });
-
-  return json_({ ok: true, accessible: true, email: email, date: date, busy: busy, free: free, dayStart: dayStartIso, dayEnd: dayEndIso });
-}
-
 
 function readInterviews_() {
   var sh = ss_().getSheetByName(SETTINGS.INTERVIEWS_TAB_NAME);
@@ -588,130 +523,37 @@ function saveInterviewRow_(ev) {
   return ev;
 }
 
-// Build a JS Date from "YYYY-MM-DD" + "HH:MM" (server-local time).
-function eventDate_(date, time) {
-  var d = String(date || "").match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (!d) return null;
-  var t = String(time || "").match(/(\d{1,2})(:(\d{2}))?/);
-  var h = t ? parseInt(t[1], 10) : 0, m = t && t[3] ? parseInt(t[3], 10) : 0;
-  return new Date(parseInt(d[1], 10), parseInt(d[2], 10) - 1, parseInt(d[3], 10), h, m);
-}
-
 function toIso_(dt) {
   var p = function (n) { return ("0" + n).slice(-2); };
   return dt.getFullYear() + "-" + p(dt.getMonth() + 1) + "-" + p(dt.getDate()) + " " + p(dt.getHours()) + ":" + p(dt.getMinutes());
 }
 
-function createCalendarEvent_(p) {
-  var title = norm_(p.candidate) + (norm_(p.role) ? " - " + norm_(p.role) : "");
+function createTrackerRow_(p) {
   if (!norm_(p.candidate)) throw new Error("candidate name required");
   if (!norm_(p.date)) throw new Error("interview date required");
-  var start = eventDate_(p.date, p.time || "09:00");
-  if (!start) throw new Error("invalid date: " + p.date);
-  var dur = parseInt(p.duration, 10) || 60;
-  var end = new Date(start.getTime() + dur * 60000);
-  var cal = cal_();
-  var opts = {};
-  // Participants = the roll-up of the old single interviewer + the expandable
-  // invitee list. Build one comma-separated guest string for CalendarApp.
-  var parts = participantEmails_(p);
-  if (parts.length) {
-    try { opts.guests = parts.join(","); opts.sendInvites = false; } catch (e2) {}
-  }
-  var event = cal.createEvent(title, start, end, opts);
-  var meet = meetLink_(event);
   var ev = {
-    eventId: event.getId(),
+    eventId: "TRK" + new Date().getTime() + Math.floor(Math.random() * 900 + 100),
     candidate: norm_(p.candidate),
     candidateEmail: norm_(p.candidateEmail),
     role: norm_(p.role),
     date: norm_(p.date),
-    time: norm_(p.time || "09:00"),
-    duration: dur,
+    time: norm_(p.time || ""),
+    duration: parseInt(p.duration, 10) || 60,
     interviewer: norm_(p.interviewer),
     interviewerEmail: norm_(p.interviewerEmail),
-    participants: participants_(p),
-    meet: meet,
+    participants: [],
+    meet: "",
     status: "active",
     notes: norm_(p.notes)
   };
   return saveInterviewRow_(ev);
 }
 
-// Normalize the invitee list parameter: may arrive as an array, or as a JSON
-// string (from the frontend query string). Returns an array of {name, email}.
-function parseInvitees_(inv) {
-  if (!inv) return [];
-  if (typeof inv === "string") {
-    var s = inv.trim();
-    if (!s) return [];
-    if (s.charAt(0) === "[") {
-      try { return JSON.parse(s) || []; } catch (e) { return []; }
-    }
-    return s.split(",").map(function (x) { return { name: x.trim(), email: "" }; });
-  }
-  if (inv.map) return inv;
-  return [inv];
-}
-
-// Gather the participant invite emails: the interviewer email field plus any
-// emails from the expandable "invitee" list, de-duplicated and non-empty.
-function participantEmails_(p) {
-  var seen = {};
-  var out = [];
-  function push(e) {
-    var em = norm_(e).trim().toLowerCase();
-    if (em && !seen[em]) { seen[em] = true; out.push(norm_(e).trim()); }
-  }
-  push(p.candidateEmail);
-  push(p.interviewerEmail);
-  parseInvitees_(p.invitees).forEach(function (x) {
-    if (x && typeof x.email === "string") push(x.email);
-  });
-  return out;
-}
-
-// Structured participant list (name + email) persisted to the sheet.
-function participants_(p) {
-  var out = [];
-  if (norm_(p.interviewer)) {
-    out.push({ name: norm_(p.interviewer), email: norm_(p.interviewerEmail) });
-  }
-  parseInvitees_(p.invitees).forEach(function (x) {
-    if (x && norm_(x.name)) out.push({ name: norm_(x.name), email: norm_(x.email) });
-  });
-  return out;
-}
-
-
-function updateCalendarEvent_(p) {
+function updateTrackerRow_(p) {
   var id = p.id || p.eventId || "";
-  if (!id) throw new Error("event id required");
+  if (!id) throw new Error("interview id required");
   var ev = readInterviews_().filter(function (x) { return x.eventId === id; })[0];
   if (!ev) throw new Error("interview not found");
-  var event;
-  try { event = cal_().getEventById(id); } catch (e) { event = null; }
-  if (event) {
-    if (norm_(p.date) && norm_(p.time)) {
-      var start = eventDate_(p.date, p.time);
-      if (start) event.setTime(start, new Date(start.getTime() + (parseInt(p.duration, 10) || ev.duration) * 60000));
-    }
-    if (norm_(p.candidate) || norm_(p.role)) event.setTitle(norm_(p.candidate || ev.candidate) + (norm_(p.role || ev.role) ? " - " + norm_(p.role || ev.role) : ""));
-    // Sync participant invites: add new, remove missing.
-    if (p.invitees !== undefined || p.interviewerEmail !== undefined || p.candidateEmail !== undefined) {
-      var want = participantEmails_(p);
-      var haveMap = {};
-      var guests = event.getGuestList(true);
-      for (var gi = 0; gi < guests.length; gi++) {
-        haveMap[String(guests[gi].getEmail()).toLowerCase()] = guests[gi];
-      }
-      var wantMap = {};
-      want.forEach(function (em) { wantMap[em.toLowerCase()] = em; });
-      Object.keys(wantMap).forEach(function (k) { if (!haveMap[k]) { try { event.addGuest(wantMap[k]); } catch (e3) {} } });
-      Object.keys(haveMap).forEach(function (k) { if (!wantMap[k]) { try { event.removeGuest(haveMap[k].getEmail()); } catch (e4) {} } });
-    }
-  }
-  // update the sheet reference row
   var merged = {
     eventId: id,
     candidate: norm_(p.candidate || ev.candidate),
@@ -722,42 +564,23 @@ function updateCalendarEvent_(p) {
     duration: parseInt(p.duration, 10) || ev.duration,
     interviewer: norm_(p.interviewer === undefined ? ev.interviewer : p.interviewer),
     interviewerEmail: norm_(p.interviewerEmail === undefined ? ev.interviewerEmail : p.interviewerEmail),
-    participants: p.invitees !== undefined ? participants_(p) : (ev.participants || []),
+    status: norm_(p.status === undefined ? ev.status : p.status) || "active",
     meet: ev.meet,
-    status: ev.status,
     notes: norm_(p.notes === undefined ? ev.notes : p.notes),
     row: ev.row
   };
   return saveInterviewRow_(merged);
 }
 
-function cancelCalendarEvent_(p) {
+function cancelTrackerRow_(p) {
   var id = p.id || p.eventId || "";
-  if (!id) throw new Error("event id required");
+  if (!id) throw new Error("interview id required");
   var ev = readInterviews_().filter(function (x) { return x.eventId === id; })[0];
   if (!ev) throw new Error("interview not found");
-  var event;
-  try { event = cal_().getEventById(id); } catch (e) { event = null; }
-  if (event) event.deleteEvent();
   ev.status = "cancelled";
   ev.row = ev.row;
   saveInterviewRow_(ev);
   return { ok: true, eventId: id, status: "cancelled" };
-}
-
-function meetLink_(event) {
-  try {
-    var cd = event.getConferenceData();
-    if (cd) {
-      var eps = cd.getEntryPoints();
-      for (var i = 0; i < eps.length; i++) {
-        var u = eps[i].getUri();
-        if (u && norm_(u).indexOf("meet.google.com") !== -1) return u;
-      }
-      if (eps.length) return eps[0].getUri();
-    }
-  } catch (e) {}
-  return "";
 }
 
 /* ============================================================
@@ -836,8 +659,10 @@ function doGet(e) {
       ss_().getSheetByName(dloc.tab).deleteRow(dloc.row);
       return json_({ ok: true, tab: dloc.tab, row: dloc.row, id: did });
 
-    } else if (action === "calendar") {
-      // Interviews scheduled in Google Calendar (source = Interviews tab).
+    } else if (action === "tracker" || action === "calendar") {
+      // Interview tracker listings. "upcoming" = scheduled and not yet past;
+      // "past" = the interview time has passed -> treated as completed
+      // automatically. Nothing is pushed to Google Calendar.
       var evs = allInterviews_().filter(function (x) { return x.status !== "cancelled"; });
       evs.sort(function (a, b) { return (a.date + a.time).localeCompare(b.date + b.time); });
       var now = new Date();
@@ -845,22 +670,19 @@ function doGet(e) {
       var past = evs.filter(function (x) { return (x.date + " " + x.time) < toIso_(now); });
       return json_({ events: evs, upcoming: upcoming, past: past });
 
-    } else if (action === "calendarfreebusy") {
-      return calendarFreeBusy_(p);
-
-    } else if (action === "calendarcreate") {
+    } else if (action === "trackercreate" || action === "calendarcreate") {
       cacheClear_();
-      var ce = createCalendarEvent_(p);
+      var ce = createTrackerRow_(p);
       return json_({ ok: true, eventId: ce.eventId, event: ce });
 
-    } else if (action === "calendarupdate") {
+    } else if (action === "trackerupdate" || action === "calendarupdate") {
       cacheClear_();
-      var ue = updateCalendarEvent_(p);
+      var ue = updateTrackerRow_(p);
       return json_({ ok: true, eventId: ue.eventId, event: ue });
 
-    } else if (action === "calendarcancel") {
+    } else if (action === "trackercancel" || action === "calendarcancel") {
       cacheClear_();
-      return json_(cancelCalendarEvent_(p));
+      return json_(cancelTrackerRow_(p));
 
     } else {
       throw new Error("unknown action: " + action);
