@@ -634,7 +634,6 @@
         '<td>' + esc(a.ctc || "—") + '</td>' +
         '<td>' + esc(priorityLabel(a.priority)) + '</td>' +
         '<td><select class="input status-select" data-id="' + esc(a.id) + '" data-prev="' + esc(a.status || "") + '" title="Change status">' + statusOptions(a.status) + '</select></td>' +
-        '<td>' + esc(a.time || "—") + '</td>' +
         '<td>' + trackBtn(a) + '</td>' +
       '</tr>';
     }).join("");
@@ -714,8 +713,7 @@
 
     var app = [
       item("Position Applied For", esc(c.roleTitle || c.position || "—")),
-      edit("Current Status", "status", c.status),
-      edit("Time we can go for", "time", c.time)
+      edit("Current Status", "status", c.status)
     ];
     sections.push(group("Application", grid(app)));
 
@@ -727,19 +725,6 @@
       edit("Interviewer Review 4", "review4", c.review4, { rows: 3 }, "review")
     ];
     sections.push(group("Reviews", '<div class="cand-grid">' + reviews.join("") + '</div>'));
-
-    // Interview info (derived from time/scheduling) - show sorted date if present
-    var time = String(c.time || "").trim();
-    var ivBadge;
-    if (/20\d{2}-\d{1,2}-\d{1,2}/.test(time) || /(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(time)) {
-      ivBadge = '<span class="badge badge-blue">Scheduled</span>';
-    } else if (time) {
-      ivBadge = '<span class="badge badge-amber">Scheduling pending</span>';
-    } else {
-      ivBadge = '<span class="badge badge-gray">—</span>';
-    }
-    var intv = [ item("Interview / Scheduling", ivBadge + ' <span class="cell-sub">' + esc(time || "Not set") + '</span>') ];
-    sections.push(group("Interview", grid(intv)));
 
     $("cand-sections").innerHTML = sections.join("");
 
@@ -974,7 +959,7 @@
   /* ---------------- editing / sync ---------------- */
 
   var FIELD_MAP = {
-    status: "J", priority: "I", time: "K", ctc: "H", experience: "G",
+    status: "J", priority: "I", ctc: "H", experience: "G",
     reviewAnisha: "L", review1: "M", review2: "N", review3: "O", review4: "P",
     name: "B", email: "C", phone: "D", position: "E", resume: "F"
   };
@@ -992,11 +977,6 @@
     priority: {
       title: "Edit Priority",
       fields: [ { key: "priority", label: "Priority", type: "text" } ]
-    },
-    time: {
-      title: "Edit Time / Scheduling",
-      hint: "e.g. 2026-08-29 11:00 AM (confirmed) or 'next week' (scheduling pending).",
-      fields: [ { key: "time", label: "Time we can go for", type: "text" } ]
     },
     ctc: {
       title: "Edit CTC",
@@ -1026,7 +1006,7 @@
   var editState = null;
 
   function openEdit(which) {
-    var allowed = ["status", "priority", "time", "ctc", "reviews", "contact"];
+    var allowed = ["status", "priority", "ctc", "reviews", "contact"];
     if (allowed.indexOf(which) === -1) return;
     var schema = EDIT_SCHEMAS[which];
     if (!schema || !state.currentCandidate) return;
@@ -1173,7 +1153,7 @@
       return '<option value="' + esc(r.title) + '">' + esc(r.title) + '</option>';
     }).join("");
     // reset form
-    ["name","email","phone","experience","ctc","priority","status","resume","time"].forEach(function (k) {
+    ["name","email","phone","experience","ctc","priority","status","resume"].forEach(function (k) {
       var el = $("add-" + k); if (el) el.value = "";
     });
     sel.value = "";
@@ -1201,7 +1181,6 @@
       priority: $("add-priority").value.trim(),
       status: $("add-status").value.trim(),
       resume: $("add-resume").value.trim(),
-      time: $("add-time").value.trim(),
       position: role
     };
     modalBusy("add-modal", "Adding " + name + " to the sheet…");

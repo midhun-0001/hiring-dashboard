@@ -15,9 +15,9 @@
  * APPLICANT TAB COLUMNS (single "Applicants" tab)
  *   A Applicant ID | B Full Name | C Email ID | D Phone Number
  *   E Position Applied For | F Resume/CV | G Total Years of Experience
- *   H CTC | I Priority | J Status | K Time we can go for
- *   L Review (Anisha) | M Interviewer Review 1 | N Interviewer Review 2
- *   O Interviewer Review 3 | P Interviewer Review 4
+ *   H CTC | I Priority | J Status
+ *   K Review (Anisha) | L Interviewer Review 1 | M Interviewer Review 2
+ *   N Interviewer Review 3 | O Interviewer Review 4
  *
  * NOTE: Applicant "Status" (col J) values are NEVER normalized or overwritten
  * automatically. The original sheet value is always preserved; the UI only
@@ -57,7 +57,7 @@ var SETTINGS = {
   ROLES_COLS: { id:0, title:1, department:2, status:3, assignedTo:4 },
   APP_COLS: {
     applicantId:0, name:1, email:2, phone:3, position:4, resume:5,
-    experience:6, ctc:7, priority:8, status:9, time:10,
+    experience:6, ctc:7, priority:8, status:9,
     reviewAnisha:11, review1:12, review2:13, review3:14, review4:15
   },
   // Interview tracker. Records are stored in a dedicated "Interview Events"
@@ -191,7 +191,6 @@ function mapApplicant_(row) {
     ctc: norm_(row[C.ctc]),
     priority: norm_(row[C.priority]),
     status: norm_(row[C.status]),
-    time: norm_(row[C.time]),
     reviewAnisha: norm_(row[C.reviewAnisha]),
     review1: norm_(row[C.review1]),
     review2: norm_(row[C.review2]),
@@ -239,59 +238,6 @@ function resolveRoleTitle_(role) {
 }
 
 /* ============================================================
- * Interview parsing
- * ============================================================ */
-
-// Decide if a "time we can go for" string represents a CONFIRMED interview
-// date/time, vs open/relative scheduling info.
-function parseInterview_(applicant) {
-  var raw = applicant.time;
-  var s = norm_(raw).toLowerCase();
-
-  var CONFIRMED = /(20\d{2}-\d{1,2}-\d{1,2})|(\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\s+\d{4})|(\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\b)|((jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\s+\d{1,2}(st|nd|rd|th)?\b)/i;
-  // relative/ambiguous scheduling cues
-  var RELATIVE = /(tues|wed|thur|fri|sat|sun|mon)|(\d+\s*(days?|weeks?|months?))|(1\s*month)|(next\s+(week|month))|(\btomorrow\b)|(\bnext\s+round\b)/i;
-
-  if (s && CONFIRMED.test(s)) {
-    return { kind: "confirmed", raw: raw, date: extractDate_(s), time: extractTime_(s) };
-  }
-  if (s && RELATIVE.test(s)) {
-    return { kind: "pending", raw: raw, date: "", time: "" };
-  }
-  if (s) {
-    // some text but not clearly a date -> treat as scheduling info
-    return { kind: "pending", raw: raw, date: "", time: "" };
-  }
-  return { kind: "none", raw: "", date: "", time: "" };
-}
-
-function extractTime_(s) {
-  var m = s.match(/(\d{1,2})(:\d{2})?\s*(am|pm)/);
-  if (!m) return "";
-  var h = parseInt(m[1], 10), min = m[2] ? m[2].slice(1) : "00";
-  var ap = (m[3] || "").toLowerCase();
-  if (ap === "pm" && h < 12) h += 12;
-  if (ap === "am" && h === 12) h = 0;
-  return pad2_(h) + ":" + min + (ap ? " " + m[3] : "");
-}
-
-var MONTHS = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12 };
-function extractDate_(s) {
-  var m;
-  m = s.match(/(20\d{2})-(\d{1,2})-(\d{1,2})/);
-  if (m) return m[1] + "-" + pad2_(m[2]) + "-" + pad2_(m[3]);
-  m = s.match(/(\d{1,2})\s+([a-z]+)\w*\s+(\d{4})/);
-  if (m && MONTHS[m[2]] != null) return m[3] + "-" + pad2_(MONTHS[m[2]]) + "-" + pad2_(m[1]);
-  // "28 aug ..." (day + month anywhere in the string, current year)
-  m = s.match(/(\d{1,2})(st|nd|rd|th)?\s+([a-z]+)\w*/);
-  if (m && MONTHS[m[3]] != null) return new Date().getFullYear() + "-" + pad2_(MONTHS[m[3]]) + "-" + pad2_(m[1]);
-  // "aug 28" form
-  m = s.match(/([a-z]+)\w*\s+(\d{1,2})(st|nd|rd|th)?/);
-  if (m && MONTHS[m[1]] != null) return new Date().getFullYear() + "-" + pad2_(MONTHS[m[1]]) + "-" + pad2_(m[2]);
-  return "";
-}
-
-/* ============================================================
  * Aggregation
  * ============================================================ */
 
@@ -336,18 +282,12 @@ function buildDashboard_() {
   var totalApplicants = all.length;
   var upcoming = [], pending = [], completed = [];
 
-  all.forEach(function (a) {
-    var iv = parseInterview_(a);
-    a._iv = iv;
-    if (iv.kind === "confirmed") upcoming.push(interviewRow_(a, iv));
-    else if (iv.kind === "pending") pending.push(interviewRow_(a, iv));
-  });
+  // The "Time we can go for" column was removed from the sheet, so no upcoming /
+  // pending interview info is derived from applicants any more (always empty).
   // completed = anyone with a status that signals done/hired/rejected already
   completed = all.filter(function (a) {
     return isCompleted_(a.status);
-  }).map(function (a) { return interviewRow_(a, a._iv || { kind: "none", raw: "", date: "", time: "" }); });
-
-  upcoming.sort(byDate_);
+  }).map(function (a) { return interviewRow_(a, { kind: "none", raw: "", date: "", time: "" }); });
   // Order completed by interview/scheduling date, newest first (dated ones
   // first, then undated). recentCompleted = latest 5.
   completed.sort(byDateDesc_);
@@ -369,12 +309,6 @@ function byDateDesc_(x, y) {
   var d = (x.date || "0000") + " " + (x.time || "");
   var e = (y.date || "0000") + " " + (y.time || "");
   return e.localeCompare(d);
-}
-
-function byDate_(x, y) {
-  var d = (x.date || "9999") + " " + (x.time || "");
-  var e = (y.date || "9999") + " " + (y.time || "");
-  return d.localeCompare(e);
 }
 
 function isCompleted_(status) {
@@ -417,7 +351,7 @@ function allApplicants_(roles) {
  * ============================================================ */
 
 var FIELD_MAP = {
-  status: "J", priority: "I", time: "K", ctc: "H", experience: "G",
+  status: "J", priority: "I", ctc: "H", experience: "G",
   reviewAnisha: "L", review1: "M", review2: "N", review3: "O", review4: "P",
   name: "B", email: "C", phone: "D", position: "E", resume: "F",
   role: "E"
@@ -732,7 +666,6 @@ function addApplicant_(sh, p) {
   row[C.ctc] = norm_(p.ctc);
   row[C.priority] = norm_(p.priority);
   row[C.status] = norm_(p.status);
-  row[C.time] = norm_(p.time);
   row[C.reviewAnisha] = norm_(p.reviewAnisha);
   row[C.review1] = norm_(p.review1);
   row[C.review2] = norm_(p.review2);

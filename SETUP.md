@@ -51,10 +51,10 @@ dashboard by anyone with the link).
 
 ### `Applicants` tab (one tab holding every applicant)
 
-| A | B | C | D | E | F | G | H | I | J | K | L | M | N | O | P |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Applicant ID | Full Name | Email ID | Phone | Position Applied For | Resume/CV | Experience | CTC | Priority | Status | Time we can go for | Review (Anisha) | Interviewer 1 | Interviewer 2 | Interviewer 3 | Interviewer 4 |
-| APP001 | Vishalya | … | 8977026096 | Satellite Systems Engineer | … | 1.5 |  | 1* | next round | 28 aug interview | strong |  |  |  |  |
+| A | B | C | D | E | F | G | H | I | J | K | L | M | N | O |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Applicant ID | Full Name | Email ID | Phone | Position Applied For | Resume/CV | Experience | CTC | Priority | Status | Review (Anisha) | Interviewer 1 | Interviewer 2 | Interviewer 3 | Interviewer 4 |
+| APP001 | Vishalya | … | 8977026096 | Satellite Systems Engineer | … | 1.5 |  | 1* | next round | strong |  |  |  |  |
 
 - **`A Applicant ID` is required.** The dashboard keys every read, edit and
   delete on it (`?action=candidate&id=`, `?action=update&id=`). Without it the
@@ -96,11 +96,10 @@ count toward total applicants / interviews.
   (e.g. `next round`, `Call done`, `Tech 1`, `PSR`, `reject`, `Cultural fit`,
   `Details`) is preserved in the sheet; the UI only *displays* it and applies a
   display-only color category.
-- **Interviews:** only `K Time we can go for` text that is a real, interpretable
-  date/time (e.g. `28 aug interview`, `2026-08-28`, `2026-08-29 11:00 AM`) is
-  shown as a **confirmed** Upcoming Interview. Text like `next round`,
-  `Tuesday`, `45 days`, `1 month` is shown under **Pending Scheduling** instead.
-  No interview date is ever invented.
+- **Interviews:** the "Time we can go for" applicant column was removed from the
+  sheet, so **no upcoming/pending interview info is derived from applicants**.
+  Interviews are managed in the **Interview Tracker** (the `Interview Events`
+  tab), which stores date/time/status per interview record.
 
 ## Apps Script setup
 
@@ -210,7 +209,7 @@ to free static hosting (Netlify / Vercel / GitHub Pages) and share that URL.
 | `addapplicant` | `role`, `name`, `email`, … | Appends a new applicant row to the role's tab |
 | `deletecandidate` | `id` | Deletes the applicant's row from its tab |
 
-`field` may be any of: `status`, `priority`, `time`, `ctc`, `experience`,
+`field` may be any of: `status`, `priority`, `ctc`, `experience`,
 `reviewAnisha`, `review1..4`, `name`, `email`, `phone`, `resume`, `position`.
 
 ## File map
