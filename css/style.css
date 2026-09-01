@@ -133,6 +133,8 @@ input, select { font-family: inherit; font-size: 14px; }
   transition: background 0.12s, border-color 0.12s;
 }
 .btn:hover { background: var(--hover); }
+.btn[disabled], .btn.disabled { opacity: 0.45; cursor: not-allowed; background: var(--surface); color: var(--muted); }
+.btn[disabled]:hover { background: var(--surface); }
 .btn-primary { background: var(--brand); border-color: var(--brand); color: #fff; }
 .btn-primary:hover { background: #1d4ed8; }
 .btn-ghost { border-color: transparent; background: transparent; }

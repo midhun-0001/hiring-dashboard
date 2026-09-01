@@ -33,6 +33,16 @@
     return s.indexOf("reject") !== -1 || s.indexOf("backout") !== -1;
   }
 
+  // Track button in the lists. Disabled for rejected profiles so a closed
+  // profile can't be added to the interview tracker.
+  function trackBtn(a) {
+    var rejected = isRejected(a.status);
+    var attrs = 'data-cand-id="' + esc(a.id) + '"';
+    if (rejected) attrs += ' disabled title="Rejected profile — not tracked"';
+    else attrs += ' title="Add to interview tracker"';
+    return '<button class="btn btn-sm btn-primary cal-schedule-btn" ' + attrs + '>Track</button>';
+  }
+
   // Categorization is display-only; the original cell text is never modified.
   function statusBadge(status) {
     var s = String(status || "").trim().toLowerCase();
@@ -446,7 +456,7 @@
         '<td>' + esc(a.phone || "—") + '</td>' +
         '<td>' + (a.resume ? '<a href="' + esc(a.resume) + '" target="_blank" rel="noopener" class="resume-link" title="Open resume">View</a>' : "—") + '</td>' +
         '<td><input class="input pipe-review" data-id="' + esc(a.id) + '" value="' + esc(a.reviewAnisha || "") + '" placeholder="Short review…" title="Type a short review, then press Enter / click away to save" /></td>' +
-        '<td><button class="btn btn-sm btn-primary cal-schedule-btn" data-cand-id="' + esc(a.id) + '" title="Add to interview tracker">Track</button></td>' +
+        '<td>' + trackBtn(a) + '</td>' +
       '</tr>';
     }).join("");
     el.innerHTML = '<div class="table-wrap"><table class="table">' +
@@ -625,7 +635,7 @@
         '<td>' + esc(priorityLabel(a.priority)) + '</td>' +
         '<td><select class="input status-select" data-id="' + esc(a.id) + '" data-prev="' + esc(a.status || "") + '" title="Change status">' + statusOptions(a.status) + '</select></td>' +
         '<td>' + esc(a.time || "—") + '</td>' +
-        '<td><button class="btn btn-sm btn-primary cal-schedule-btn" data-cand-id="' + esc(a.id) + '" title="Add to interview tracker">Track</button></td>' +
+        '<td>' + trackBtn(a) + '</td>' +
       '</tr>';
     }).join("");
     body.querySelectorAll("tr").forEach(function (tr) {
@@ -733,7 +743,7 @@
 
     $("cand-sections").innerHTML = sections.join("");
 
-    $("cand-actions").innerHTML = '<button class="btn btn-primary" id="cand-schedule-btn">Add to Tracker</button>' +
+    $("cand-actions").innerHTML = '<button class="btn btn-primary" id="cand-schedule-btn"' + (isRejected(c.status) ? ' disabled title="Rejected profile — not tracked"' : '') + '>Add to Tracker</button>' +
       '<button class="btn btn-danger" id="cand-delete-btn">Delete Candidate</button>';
     var sch = $("cand-schedule-btn");
     if (sch) sch.addEventListener("click", function () {
