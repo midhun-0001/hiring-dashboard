@@ -10,6 +10,7 @@
     dashboard: null,     // { stats, roles, upcomingInterviews, interviews }
     calendar: null,      // { events, upcoming, past } from the Interviews/calendar source
     allApplicants: [],   // global aggregated applicants
+    statusOptions: [],   // allowed Status values from the sheet's dropdown (data validation)
     currentView: "dashboard",
     currentRole: null,   // { title, status, department, ... }
     currentCandidate: null,
@@ -290,6 +291,7 @@
     setTimeout(hideLoading, 900);
     API.dashboard().then(function (data) {
       state.dashboard = data;
+      if (data.statusOptions && data.statusOptions.length) state.statusOptions = data.statusOptions;
       renderStats(data.stats);
       renderRoleChart(data.roles);
       renderRoles("roles-grid", data.roles);
@@ -365,6 +367,7 @@
     if (empty) empty.classList.add("hidden");
     API.applicants().then(function (data) {
       state.allApplicants = data.applicants || [];
+      if (data.statusOptions && data.statusOptions.length) state.statusOptions = data.statusOptions;
       buildApplicantFilters();
       renderApplicants();
     }).catch(showError);
@@ -471,20 +474,7 @@
     el.querySelectorAll(".pipe-status").forEach(function (sel) {
       sel.addEventListener("click", function (e) { e.stopPropagation(); });
       sel.addEventListener("change", function () {
-        var id = sel.dataset.id;
-        var prev = sel.dataset.prev;
-        sel.disabled = true;
-        API.update(id, "status", sel.value).then(function () {
-          toast("Status updated");
-          sel.disabled = false;
-          sel.dataset.prev = sel.value;
-          loadDashboard();
-          if (state.allApplicants.length) loadAllApplicants();
-        }).catch(function (err) {
-          sel.disabled = false;
-          if (prev !== undefined) sel.value = prev;
-          showError(err);
-        });
+        setStatusControl(sel, sel.dataset.prev);
       });
     });
     el.querySelectorAll(".pipe-review").forEach(function (inp) {
@@ -609,22 +599,46 @@
 
   function statusOptions(current) {
     var cur = String(current || "").trim();
-    // Options come from the actual Status column values in the sheet, so the
-    // dropdown always reflects what's really there (e.g. "Call Done") and never
-    // a hardcoded list.
-    var opts = [];
-    state.allApplicants.forEach(function (a) {
-      var s = String(a.status || "").trim();
-      if (s && opts.indexOf(s) === -1) opts.push(s);
-    });
+    // Options mirror the sheet's Status dropdown (data validation) list, so the
+    // website offers exactly the same choices as the sheet. Falls back to the
+    // distinct Status values present in the loaded rows if the list is empty.
+    var opts = (state.statusOptions || []).slice();
+    if (!opts.length) {
+      state.allApplicants.forEach(function (a) {
+        var s = String(a.status || "").trim();
+        if (s && opts.indexOf(s) === -1) opts.push(s);
+      });
+    }
     opts.sort(function (a, b) { return a.localeCompare(b); });
     // keep the current value if it isn't already in the list
     if (cur && opts.indexOf(cur) === -1) opts.unshift(cur);
-    // always offer a blank option; no-status rows stay blank (not forced to a value)
+    // no-status rows stay blank (not forced to a value)
     var selected = cur;
     return '<option value="">—</option>' + opts.map(function (o) {
       return '<option value="' + esc(o) + '"' + (o === selected ? " selected" : "") + '>' + esc(o) + '</option>';
     }).join("");
+  }
+
+  // Persist a Status change to the backend. Retries once on a transient network
+  // failure (Apps Script cold-start can time out the first request), so the
+  // dropdown doesn't appear broken. Revert only if both attempts fail.
+  function setStatusControl(sel, prev) {
+    sel.disabled = true;
+    var attempt = function (n) {
+      API.update(sel.dataset.id, "status", sel.value).then(function () {
+        sel.disabled = false;
+        sel.dataset.prev = sel.value;
+        toast("Status updated");
+        loadDashboard();
+        if (state.allApplicants.length) loadAllApplicants();
+      }).catch(function (err) {
+        if (n < 1) { attempt(n + 1); return; }
+        sel.disabled = false;
+        sel.value = prev;
+        showError(err);
+      });
+    };
+    attempt(0);
   }
 
   function renderApplicants() {
@@ -653,20 +667,7 @@
     body.querySelectorAll(".status-select").forEach(function (sel) {
       sel.addEventListener("click", function (e) { e.stopPropagation(); });
       sel.addEventListener("change", function () {
-        var id = sel.dataset.id;
-        var prev = sel.dataset.prev;
-        sel.disabled = true;
-        API.update(id, "status", sel.value).then(function () {
-          toast("Status updated");
-          sel.disabled = false;
-          sel.dataset.prev = sel.value;
-          loadDashboard();
-          if (state.allApplicants.length) loadAllApplicants();
-        }).catch(function (err) {
-          sel.disabled = false;
-          if (prev !== undefined) sel.value = prev;
-          showError(err);
-        });
+        setStatusControl(sel, sel.dataset.prev);
       });
     });
     body.querySelectorAll(".cal-schedule-btn").forEach(function (b) {

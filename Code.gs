@@ -223,6 +223,46 @@ function readApplicants_() {
 // Backward-compat alias (tab is ignored - there is a single Applicants tab).
 function readTab_(tab) { return readApplicants_(); }
 
+// Return the list of allowed Status values from the sheet's data-validation
+// dropdown on the Status column (column J), so the website shows exactly the
+// same options as the sheet. Falls back to the distinct Status values actually
+// present in the data if no validation list is configured.
+function statusOptions_() {
+  var sh = ss_().getSheetByName(SETTINGS.APP_TAB_NAME);
+  var out = [];
+  if (sh) {
+    try {
+      var lastRow = Math.max(sh.getLastRow(), 2);
+      var statusCol = SETTINGS.APP_COLS.status + 1; // 1-based column letter index
+      var dvs = sh.getRange(2, statusCol, lastRow - 1, 1).getDataValidations();
+      for (var i = 0; i < dvs.length; i++) {
+        var dv = dvs[i][0];
+        if (!dv) continue;
+        var crit = dv.getCriteriaValues();
+        if (crit && crit[0]) {
+          if (Array.isArray(crit[0])) {
+            out = crit[0].slice();
+          } else if (crit[0].getValues && typeof crit[0].getValues === "function") {
+            var vals = crit[0].getValues();
+            for (var r = 0; r < vals.length; r++) out.push(String(vals[r][0]));
+          }
+          break;
+        }
+      }
+    } catch (e) { out = []; }
+  }
+  if (!out.length) {
+    var seen = {};
+    readApplicants_().forEach(function (a) {
+      var s = norm_(a.status);
+      if (s && !seen[s]) { seen[s] = true; out.push(s); }
+    });
+  }
+  out = out.filter(function (s) { return norm_(s) !== ""; });
+  out.sort(function (a, b) { return String(a).localeCompare(String(b)); });
+  return out;
+}
+
 // Resolve a role name (title, id, or tab-like name) to a Roles-tab title,
 // falling back to the raw input. Matching is fuzzy / case-insensitive.
 function resolveRoleTitle_(role) {
@@ -295,6 +335,7 @@ function buildDashboard_() {
   return {
     stats: { openRoles: openRoles, closedRoles: closedRoles, totalApplicants: totalApplicants },
     roles: roles,
+    statusOptions: statusOptions_(),
     upcomingInterviews: upcoming,
     interviews: {
       upcoming: upcoming,
@@ -545,7 +586,7 @@ function doGet(e) {
       return json_(withCounts_(readRoles_()));
 
     } else if (action === "applicants") {
-      return json_({ applicants: allApplicants_(readRoles_()) });
+      return json_({ applicants: allApplicants_(readRoles_()), statusOptions: statusOptions_() });
 
     } else if (action === "roleapplicants") {
       var role = resolveRoleTitle_(p.role || p.title || "");

@@ -194,10 +194,10 @@ to free static hosting (Netlify / Vercel / GitHub Pages) and share that URL.
 
 | Action | Params | Returns |
 |---|---|---|
-| `dashboard` | — | `{ stats, roles, upcomingInterviews, interviews:{upcoming,pending,completed} }` |
+| `dashboard` | — | `{ stats, roles, statusOptions, upcomingInterviews, interviews:{upcoming,pending,completed} }` |
 | `roles` | — | Role list with live `applicantCount` |
 | `roleapplicants` | `role` | Applicants for one role's tab |
-| `applicants` | — | All applicants across every role tab |
+| `applicants` | — | All applicants across every role tab (`{ applicants, statusOptions }`) |
 | `candidate` | `id` | One applicant's full record (all 5 reviews) |
 | `interviews` | — | `{ upcoming, pending, completed, recentCompleted }` |
 | `calendar` | — | `{ events, upcoming, past }` from the `Interview Events` tab (tracker) |
