@@ -572,8 +572,6 @@
     });
   }
 
-  var STATUS_OPTIONS = ["Call", "Cultural fit", "PSR", "Technical 1", "Technical final", "Rejected"];
-
   // interviewer name -> email. The email is looked up automatically when an
   // interviewer is chosen in the schedule modal. The "palani" alias maps to
   // Palaniappan's address. Update these with the current team addresses.
@@ -611,11 +609,20 @@
 
   function statusOptions(current) {
     var cur = String(current || "").trim();
-    var opts = STATUS_OPTIONS.slice();
-    // keep the current value if it isn't already in the list or is blank
+    // Options come from the actual Status column values in the sheet, so the
+    // dropdown always reflects what's really there (e.g. "Call Done") and never
+    // a hardcoded list.
+    var opts = [];
+    state.allApplicants.forEach(function (a) {
+      var s = String(a.status || "").trim();
+      if (s && opts.indexOf(s) === -1) opts.push(s);
+    });
+    opts.sort(function (a, b) { return a.localeCompare(b); });
+    // keep the current value if it isn't already in the list
     if (cur && opts.indexOf(cur) === -1) opts.unshift(cur);
-    var selected = cur && opts.indexOf(cur) !== -1 ? cur : (opts[0] || "");
-    return opts.map(function (o) {
+    // always offer a blank option; no-status rows stay blank (not forced to a value)
+    var selected = cur;
+    return '<option value="">—</option>' + opts.map(function (o) {
       return '<option value="' + esc(o) + '"' + (o === selected ? " selected" : "") + '>' + esc(o) + '</option>';
     }).join("");
   }
