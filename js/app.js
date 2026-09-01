@@ -863,6 +863,13 @@
       emptyMsg = "No upcoming interviews. Add one to start tracking.";
     }
 
+    // The completed-list Decision dropdown must map back to an applicant, so we
+    // need the applicant directory. It's normally lazy-loaded only on the
+    // applicants view, so fetch it here too (re-renders when it arrives).
+    if (seg === "completed" && !(state.allApplicants && state.allApplicants.length)) {
+      loadApplicantsForDecisions();
+    }
+
     if (!list.length) { el.innerHTML = '<div class="empty">' + esc(emptyMsg) + '</div>'; return; }
 
     var rows = list.map(function (i) {
@@ -873,6 +880,20 @@
         ? '<button class="btn btn-sm btn-ghost" data-edit-evt="' + esc(i.eventId) + '">Edit</button>'
         : "";
 
+      var decideCell = "";
+      if (seg === "completed") {
+        // A per-row decision for the completed interview. Only "Rejected" has a
+        // side effect: it sets the candidate's Status to "Rejected" in the main
+        // applicants place. "Pass" is informational and changes nothing.
+        var matched = findApplicant(i.candidate, i.role || i.roleTitle || "");
+        var selected = (matched && isRejected(matched.status) ? ' selected' : '');
+        decideCell = '<td><select class="input iv-decision" data-cand="' + esc(i.candidate) + '" data-role="' + esc(i.role || i.roleTitle || "") + '">' +
+          '<option value="">—</option>' +
+          '<option value="Pass">Pass</option>' +
+          '<option value="Rejected"' + selected + '>Rejected</option>' +
+          '</select></td>';
+      }
+
       return '<tr data-id="' + esc(i.id || "") + '">' +
         '<td class="cell-primary">' + esc(i.candidate) + '</td>' +
         '<td>' + esc(i.role || i.roleTitle || "—") + '</td>' +
@@ -881,16 +902,74 @@
         '<td>' + esc(i.interviewer || "—") + '</td>' +
         '<td>' + esc(i.duration ? i.duration + " min" : "—") + '</td>' +
         '<td><span class="badge ' + statusBadgeCls + '">' + esc(statusLabel) + '</span></td>' +
+        decideCell +
         '<td>' + action + '</td>' +
       '</tr>';
     }).join("");
 
     el.innerHTML = '<table class="table"><thead><tr>' +
-      '<th>Candidate</th><th>Role</th><th>Date</th><th>Time</th><th>Interviewer</th><th>Duration</th><th>Status</th><th></th>' +
-      '</tr></thead><tbody>' + rows + '</tbody></table>';
+      '<th>Candidate</th><th>Role</th><th>Date</th><th>Time</th><th>Interviewer</th><th>Duration</th><th>Status</th>' +
+      (seg === "completed" ? '<th>Decision</th>' : '') +
+      '<th></th></tr></thead><tbody>' + rows + '</tbody></table>';
 
     el.querySelectorAll("[data-edit-evt]").forEach(function (b) {
       b.addEventListener("click", function (e) { e.stopPropagation(); openCalendarModal(b.dataset.editEvt); });
+    });
+
+    el.querySelectorAll(".iv-decision").forEach(function (sel) {
+      sel.addEventListener("click", function (e) { e.stopPropagation(); });
+      sel.addEventListener("change", function () {
+        if (sel.value === "Rejected") decideRejected(sel.dataset.cand, sel.dataset.role, sel);
+        else sel.dataset.planned = sel.value;
+      });
+    });
+  }
+
+  // Find the applicant matching a completed-interview candidate by name (+ role),
+  // so a rejection can be written back to the main applicants place.
+  function findApplicant(name, role) {
+    var n = String(name || "").trim().toLowerCase();
+    if (!n) return null;
+    var all = state.allApplicants || [];
+    var byRole = all.filter(function (a) {
+      return a.name && String(a.name).trim().toLowerCase() === n &&
+        role && String(a.roleTitle).trim().toLowerCase() === String(role).trim().toLowerCase();
+    });
+    if (byRole.length) return byRole[0];
+    return all.filter(function (a) {
+      return a.name && String(a.name).trim().toLowerCase() === n;
+    })[0] || null;
+  }
+
+  // Fetch the applicant directory just to power the completed-list decisions,
+  // without switching views; re-renders the completed list once loaded.
+  function loadApplicantsForDecisions() {
+    API.applicants().then(function (data) {
+      state.allApplicants = data.applicants || [];
+      if (data.statusOptions && data.statusOptions.length) state.statusOptions = data.statusOptions;
+      if (state.currentView === "interviews" && state.currentIvSeg === "completed") renderInterviewsPage();
+    }).catch(showError);
+  }
+
+  function decideRejected(name, role, sel) {
+    var a = findApplicant(name, role);
+    if (!a) {
+      toast("No matching candidate found to reject");
+      sel.value = "";
+      return;
+    }
+    sel.disabled = true;
+    API.update(a.id, "status", "Rejected").then(function () {
+      sel.disabled = false;
+      sel.value = "Rejected";
+      toast('"' + a.name + '" marked as Rejected');
+      loadDashboard();
+      if (state.allApplicants.length) loadAllApplicants();
+      if (state.currentView === "interviews") renderInterviewsPage();
+    }).catch(function (err) {
+      sel.disabled = false;
+      sel.value = "";
+      showError(err);
     });
   }
 
