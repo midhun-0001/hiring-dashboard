@@ -28,11 +28,16 @@
   }
 
   // Visual status category -> {cls,label} WITHOUT changing the sheet value.
+  function isRejected(status) {
+    var s = String(status || "").trim().toLowerCase();
+    return s.indexOf("reject") !== -1 || s.indexOf("backout") !== -1;
+  }
+
   // Categorization is display-only; the original cell text is never modified.
   function statusBadge(status) {
     var s = String(status || "").trim().toLowerCase();
     if (!s) return { cls: "badge-gray", label: "—" };
-    if (s.indexOf("reject") !== -1 || s.indexOf("backout") !== -1) return { cls: "badge-red", label: status };
+    if (isRejected(status)) return { cls: "badge-red", label: status };
     if (s === "done" || s === "hired" || s === "selected" || s.indexOf("selected") !== -1) return { cls: "badge-green", label: status };
     if (s.indexOf("call done") !== -1 || s === "details" || s.indexOf("screen") !== -1) return { cls: "badge-blue", label: status };
     if (s.indexOf("final") !== -1) return { cls: "badge-green", label: status };
@@ -430,8 +435,12 @@
   function renderPipeline(applicants) {
     var el = $("pipeline");
     if (!applicants.length) { el.innerHTML = '<div class="empty">No applicants for this role yet.</div>'; return; }
-    var rows = applicants.map(function (a) {
-      return '<tr class="clickable" data-id="' + esc(a.id) + '">' +
+    // Rejected profiles sink to the bottom; the rest keep their order.
+    var sorted = applicants.slice().sort(function (a, b) {
+      return (isRejected(a.status) ? 1 : 0) - (isRejected(b.status) ? 1 : 0);
+    });
+    var rows = sorted.map(function (a) {
+      return '<tr class="clickable' + (isRejected(a.status) ? ' rejected-row' : '') + '" data-id="' + esc(a.id) + '">' +
         '<td class="cell-primary">' + esc(a.name) + '</td>' +
         '<td><select class="input status-select pipe-status" data-id="' + esc(a.id) + '" data-prev="' + esc(a.status || "") + '" title="Change status">' + statusOptions(a.status) + '</select></td>' +
         '<td>' + esc(a.experience || "—") + '</td>' +
@@ -566,6 +575,11 @@
       if (f.status && (a.status || "") !== f.status) return false;
       if (f.priority && (a.priority || "") !== f.priority) return false;
       return true;
+    }).sort(function (a, b) {
+      // Rejected profiles sink to the bottom of the list; the rest keep order.
+      var ra = isRejected(a.status) ? 1 : 0;
+      var rb = isRejected(b.status) ? 1 : 0;
+      return ra - rb;
     });
   }
 
@@ -624,7 +638,7 @@
     empty.classList.toggle("hidden", list.length !== 0);
     if (!list.length) { body.innerHTML = ""; return; }
     body.innerHTML = list.map(function (a) {
-      return '<tr class="clickable" data-id="' + esc(a.id) + '">' +
+      return '<tr class="clickable' + (isRejected(a.status) ? ' rejected-row' : '') + '" data-id="' + esc(a.id) + '">' +
         '<td><div class="cell-primary">' + esc(a.name) + '</div><div class="cell-sub">' + esc(a.id || "") + '</div></td>' +
         '<td>' + esc(a.roleTitle) + '</td>' +
         '<td>' + esc(a.experience || "—") + '</td>' +

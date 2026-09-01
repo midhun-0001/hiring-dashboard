@@ -321,6 +321,9 @@ input, select { font-family: inherit; font-size: 14px; }
 .table tbody tr { transition: background 0.1s; }
 .table tbody tr.clickable { cursor: pointer; }
 .table tbody tr.clickable:hover { background: var(--hover); }
+.table tbody tr.rejected-row td { background: rgba(220, 38, 38, 0.06); }
+.table tbody tr.rejected-row .cell-primary { color: var(--red); }
+.table tbody tr.rejected-row .status-select { color: var(--red); }
 .cell-primary { font-weight: 600; }
 .cell-sub { color: var(--muted); font-size: 12px; }
 
