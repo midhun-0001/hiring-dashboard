@@ -598,6 +598,10 @@ td .inline-loader { padding: 22px 8px; }
 .add-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 18px; }
 .add-grid .field { margin-bottom: 0; }
 
+/* "add new interviewer" block hidden until chosen from the interviewer dropdown */
+.add-interviewer { grid-column: 1 / -1; background: color-mix(in srgb, var(--surface) 70%, transparent); border: 1px dashed var(--border); border-radius: 8px; padding: 12px; margin-top: 2px; }
+.add-interviewer .field { margin-bottom: 14px; }
+
 @media (max-width: 720px) {
   .add-grid { grid-template-columns: 1fr; }
 }

@@ -267,7 +267,7 @@
       <form id="cal-form">
         <div class="add-grid">
           <label class="field"><span>Candidate *</span><input id="cal-candidate" class="input" type="text" required /></label>
-          <label class="field"><span>Candidate email</span><input id="cal-candidate-email" class="input" type="email" /></label>
+          <input id="cal-candidate-email" type="hidden" />
           <label class="field"><span>Role *</span>
             <select id="cal-role" class="input"><option value="">Select role…</option></select>
           </label>
@@ -277,9 +277,16 @@
           <label class="field"><span>Interviewer</span>
             <select id="cal-interviewer-select" class="input"><option value="">Select…</option></select>
           </label>
-          <label class="field"><span>Interviewer name (manual)</span><input id="cal-interviewer" class="input" type="text" placeholder="e.g. Lokesh" /></label>
-          <label class="field"><span>Interviewer email</span><input id="cal-interviewer-email" class="input" type="email" /></label>
+          <input id="cal-interviewer" type="hidden" />
+          <input id="cal-interviewer-email" type="hidden" />
           <label class="field"><span>Status</span><select id="cal-status" class="input"></select></label>
+          <div class="add-interviewer hidden" id="cal-add-iv">
+            <div class="add-grid">
+              <label class="field"><span>New interviewer name</span><input id="cal-iv-new-name" class="input" type="text" placeholder="e.g. Lokesh" /></label>
+              <label class="field"><span>New interviewer email</span><input id="cal-iv-new-email" class="input" type="email" placeholder="name@vyomic.space" /></label>
+            </div>
+            <button type="button" id="cal-iv-add-btn" class="btn btn-primary btn-sm">Add interviewer</button>
+          </div>
         </div>
         <label class="field"><span>Notes</span><textarea id="cal-notes" class="input" rows="2"></textarea></label>
         <div class="modal-actions">

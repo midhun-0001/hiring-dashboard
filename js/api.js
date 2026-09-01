@@ -144,6 +144,10 @@ var API = (function () {
     trackerCancel: function (id) {
       return call({ action: "trackercancel", id: id });
     },
+    interviewers: function () { return call({ action: "interviewers" }); },
+    interviewerAdd: function (name, email) {
+      return call({ action: "intervieweradd", name: name, email: email });
+    },
     calendarCreate: function (f) { return this.trackerCreate(f); },
     calendarUpdate: function (id, f) { return this.trackerUpdate(id, f); },
     calendarCancel: function (id) { return this.trackerCancel(id); }

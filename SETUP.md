@@ -74,6 +74,14 @@ automatically classified as **past/completed** by the backend. Do not point
 `SETTINGS.INTERVIEWS_TAB_NAME` at a tab that already holds applicant data —
 `saveInterviewRow_` overwrites whole rows.
 
+### `Interviewers` tab (created automatically)
+
+The tracker modal's **Interviewer** dropdown lists names from a two-column
+**`Interviewers`** tab (`Interviewer Name | Interviewer Email`), created on first
+use. From the modal you can pick an existing interviewer or choose **Add new
+interviewer…** to persist a new name + email (via the `intervieweradd` action);
+it then appears in the dropdown for every future interview.
+
 ### Tab-name matching (keeps your real sheet names untouched)
 
 Your applicant tabs have the exact Google-Form/import names, e.g.
@@ -205,6 +213,8 @@ to free static hosting (Netlify / Vercel / GitHub Pages) and share that URL.
 | `trackercreate` | `candidate`,`candidateEmail`,`role`,`date`,`time`,`duration`,`interviewer`,`interviewerEmail`,`notes` | Adds a tracker record to the `Interview Events` tab (no calendar event) |
 | `trackerupdate` | `id`, … | Updates an existing tracker record |
 | `trackercancel` | `id` | Marks a tracker record cancelled (removed from lists) |
+| `interviewers` | — | `{ interviewers:[{name,email}] }` from the `Interviewers` tab (lists the modal's Interviewer dropdown) |
+| `intervieweradd` | `name`, `email` | Adds/updates an interviewer in the `Interviewers` tab; returns `{ interviewer, interviewers }` |
 | `update` | `id`, `field`, `value` | Writes one field back (no permission check) |
 | `addapplicant` | `role`, `name`, `email`, … | Appends a new applicant row to the role's tab |
 | `deletecandidate` | `id` | Deletes the applicant's row from its tab |

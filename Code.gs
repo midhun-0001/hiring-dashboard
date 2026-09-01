@@ -74,7 +74,12 @@ var SETTINGS = {
   INTERVIEWS_COLS: {
     eventId:0, candidate:1, role:2, date:3, time:4, duration:5,
     interviewer:6, interviewerEmail:7, meet:8, status:9, notes:10, participants:11, candidateEmail:12
-  }
+  },
+  // Interviewer directory. Source of the "Interviewer" dropdown options in the
+  // tracker modal (name + email). A Name | B Email. New interviewers added from
+  // the UI are persisted here so they appear in the dropdown next time.
+  INTERVIEWERS_TAB_NAME: "Interviewers",
+  INTERVIEWERS_COLS: { name:0, email:1 }
 };
 
 function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
@@ -261,6 +266,48 @@ function statusOptions_() {
   out = out.filter(function (s) { return norm_(s) !== ""; });
   out.sort(function (a, b) { return String(a).localeCompare(String(b)); });
   return out;
+}
+
+// Read the interviewer directory (Name + Email). Used to build the tracker
+// modal's "Interviewer" dropdown options. The tab is created on demand with a
+// header if missing.
+function readInterviewers_() {
+  var sh = ss_().getSheetByName(SETTINGS.INTERVIEWERS_TAB_NAME);
+  if (!sh) {
+    sh = ss_().insertSheet(SETTINGS.INTERVIEWERS_TAB_NAME);
+    sh.getRange(1, 1, 1, 2).setValues([["Interviewer Name", "Interviewer Email"]]);
+  }
+  var out = [];
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return out;
+  var data = sh.getRange(1, 1, lastRow, 2).getValues();
+  for (var i = 1; i < data.length; i++) {
+    var name = norm_(data[i][0]);
+    if (!name) continue;
+    out.push({ name: name, email: norm_(data[i][1]) });
+  }
+  return out;
+}
+
+// Add (or update) an interviewer in the directory; returns the saved entry.
+// Matching is case-insensitive on the name to avoid duplicates.
+function addInterviewer_(name, email) {
+  var n = norm_(name);
+  if (!n) throw new Error("interviewer name required");
+  var sh = ss_().getSheetByName(SETTINGS.INTERVIEWERS_TAB_NAME);
+  if (!sh) readInterviewers_(); // creates the tab + header
+  sh = ss_().getSheetByName(SETTINGS.INTERVIEWERS_TAB_NAME);
+  var emailVal = norm_(email);
+  var list = readInterviewers_();
+  for (var i = 0; i < list.length; i++) {
+    if (String(list[i].name).toLowerCase() === n.toLowerCase()) {
+      // existing interviewer: refresh the email.
+      sh.getRange(i + 2, 2, 1, 1).setValue(emailVal);
+      return { name: list[i].name, email: emailVal };
+    }
+  }
+  sh.getRange(sh.getLastRow() + 1, 1, 1, 2).setValues([[n, emailVal]]);
+  return { name: n, email: emailVal };
 }
 
 // Resolve a role name (title, id, or tab-like name) to a Roles-tab title,
@@ -666,6 +713,14 @@ function doGet(e) {
     } else if (action === "trackercancel" || action === "calendarcancel") {
       cacheClear_();
       return json_(cancelTrackerRow_(p));
+
+    } else if (action === "interviewers") {
+      return json_({ interviewers: readInterviewers_() });
+
+    } else if (action === "intervieweradd") {
+      cacheClear_();
+      var iv = addInterviewer_(p.name, p.email);
+      return json_({ ok: true, interviewer: iv, interviewers: readInterviewers_() });
 
     } else {
       throw new Error("unknown action: " + action);

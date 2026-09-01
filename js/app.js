@@ -11,6 +11,7 @@
     calendar: null,      // { events, upcoming, past } from the Interviews/calendar source
     allApplicants: [],   // global aggregated applicants
     statusOptions: [],   // allowed Status values from the sheet's dropdown (data validation)
+    interviewers: [],    // interviewer directory [{name, email}] for the tracker modal dropdown
     currentView: "dashboard",
     currentRole: null,   // { title, status, department, ... }
     currentCandidate: null,
@@ -584,17 +585,73 @@
     { val: "completed", label: "Completed" }
   ];
 
-  // Build the interviewer <option> list for the tracker modal. Includes the
-  // team plus an "Other…" entry that lets the user type a free-text name.
+  // Build the interviewer <option> list for the tracker modal. Options come from
+  // the interviewer directory (persisted in the sheet) plus an "Add new
+  // interviewer…" entry. Falls back to the seeded team list if the directory
+  // hasn't loaded yet.
   function interviewerOptions() {
-    var opts = [
-      '<option value="">Select interviewer…</option>'
-    ];
-    TEAM_INTERVIEWERS.forEach(function (n) {
-      opts.push('<option value="' + esc(n) + '">' + esc(n) + ' (' + esc(INTERVIEWER_EMAILS[n] || "") + ')</option>');
+    var list = (state.interviewers && state.interviewers.length)
+      ? state.interviewers
+      : TEAM_INTERVIEWERS.map(function (n) {
+          return { name: n, email: INTERVIEWER_EMAILS[n] || "" };
+        });
+    var opts = ['<option value="">Select interviewer…</option>'];
+    list.forEach(function (iv) {
+      var display = esc(iv.name) + (iv.email ? " (" + esc(iv.email) + ")" : "");
+      opts.push('<option value="' + esc(iv.name) + '">' + display + '</option>');
     });
-    opts.push('<option value="__other__">Other… (type a name)</option>');
+    opts.push('<option value="__add__">Add new interviewer…</option>');
     return opts.join("");
+  }
+
+  // Resolve an interviewer's email: from the persisted directory first, then the
+  // seeded map, else "".
+  function interviewerEmailFor(name) {
+    if (!name) return "";
+    var s = String(name).toLowerCase();
+    for (var i = 0; i < (state.interviewers || []).length; i++) {
+      if (String(state.interviewers[i].name).toLowerCase() === s) return state.interviewers[i].email || "";
+    }
+    for (var k in INTERVIEWER_EMAILS) {
+      if (String(k).toLowerCase() === s) return INTERVIEWER_EMAILS[k];
+    }
+    return "";
+  }
+
+  // Load the interviewer directory and call cb when done. The caller is
+  // responsible for rebuilding/refreshing the modal dropdown.
+  function loadInterviewers(cb) {
+    API.interviewers().then(function (data) {
+      state.interviewers = data.interviewers || [];
+      if (cb) cb();
+    }).catch(function () { if (cb) cb(); });
+  }
+
+  // Build the interviewer dropdown in the tracker modal and select the current
+  // interviewer (if any). Legacy names not yet in the directory are added as a
+  // temporary option so the existing value is preserved.
+  function applyInterviewer(interviewer, email) {
+    var ivSel = $("cal-interviewer-select");
+    var ivNameField = $("cal-interviewer");
+    var ivEmailField = $("cal-interviewer-email");
+    ivSel.innerHTML = interviewerOptions();
+    if (interviewer) {
+      var exists = false;
+      for (var i = 0; i < ivSel.options.length; i++) {
+        if (ivSel.options[i].value === interviewer) { exists = true; break; }
+      }
+      if (!exists) {
+        var opt = document.createElement("option");
+        opt.value = interviewer;
+        opt.textContent = interviewer + (email ? " (" + email + ")" : "");
+        ivSel.insertBefore(opt, ivSel.options[ivSel.options.length - 1]); // before "__add__"
+      }
+      ivSel.value = interviewer;
+    } else {
+      ivSel.value = "";
+    }
+    ivNameField.value = interviewer || "";
+    ivEmailField.value = interviewer ? (interviewerEmailFor(interviewer) || email || "") : "";
   }
 
   function statusOptions(current) {
@@ -855,12 +912,12 @@
     if (!role) { toast("Please select a role"); return; }
     if (!date) { toast("Please set a date"); return; }
 
-    // Interviewer: the selected team member, or the manually typed name if the
-    // dropdown is on "__other__" / empty.
+    // Interviewer: the selected directory name, or a manually typed name kept in
+    // the hidden field (used for legacy records not yet in the directory).
     var ivPick = $("cal-interviewer-select").value;
-    var ivName = (ivPick && ivPick !== "__other__") ? ivPick : $("cal-interviewer").value.trim();
+    var ivName = (ivPick && ivPick !== "__add__") ? ivPick : $("cal-interviewer").value.trim();
     var ivEmail = $("cal-interviewer-email").value.trim();
-    if (ivName && !ivEmail && ivPick && ivPick !== "__other__") ivEmail = INTERVIEWER_EMAILS[ivName] || "";
+    if (ivName && !ivEmail) ivEmail = interviewerEmailFor(ivName) || "";
 
     var fields = {
       candidate: candidate,
@@ -918,33 +975,17 @@
     $("cal-candidate").readOnly = !!ev;
     $("cal-candidate").placeholder = candidate ? "" : "Candidate full name";
     $("cal-candidate-email").value = candEmail;
-    $("cal-candidate-email").readOnly = !!ev;
-    $("cal-candidate-email").placeholder = candEmail ? "" : "name@example.com";
     if (role) sel.value = role;
     $("cal-date").value = date;
     $("cal-time").value = time;
     $("cal-duration").value = duration;
 
-    // Interviewer: dropdown of team members + "Other…" for free text.
-    var ivSel = $("cal-interviewer-select");
-    var ivNameField = $("cal-interviewer");
-    var ivEmailField = $("cal-interviewer-email");
-    var isTeam = interviewer && TEAM_INTERVIEWERS.indexOf(interviewer) !== -1;
-
-    ivSel.innerHTML = interviewerOptions();
-    if (isTeam) {
-      ivSel.value = interviewer;
-      ivNameField.value = "";
-      ivEmailField.value = INTERVIEWER_EMAILS[interviewer] || email || "";
-    } else if (interviewer) {
-      ivSel.value = "__other__";
-      ivNameField.value = interviewer;
-      ivEmailField.value = email || "";
-    } else {
-      ivSel.value = "";
-      ivNameField.value = "";
-      ivEmailField.value = "";
-    }
+    // Interviewer: a dropdown of the saved directory + "Add new interviewer…".
+    $("cal-add-iv").classList.add("hidden");
+    $("cal-iv-new-name").value = "";
+    $("cal-iv-new-email").value = "";
+    applyInterviewer(interviewer, email);
+    loadInterviewers(function () { applyInterviewer(interviewer, email); });
 
     $("cal-status").innerHTML = TRACKER_STATUSES.map(function (o) {
       return '<option value="' + esc(o.val) + '"' + (o.val === status ? " selected" : "") + '>' + esc(o.label) + '</option>';
@@ -1138,15 +1179,39 @@
     var v = this.value;
     var nameField = $("cal-interviewer");
     var emailField = $("cal-interviewer-email");
-    if (v && v !== "__other__") {
+    var addBlock = $("cal-add-iv");
+    if (v === "__add__") {
+      // show the "add new interviewer" inputs; clear selection until saved
+      nameField.value = "";
+      emailField.value = "";
+      addBlock.classList.remove("hidden");
+      $("cal-iv-new-name").focus();
+    } else if (v) {
+      addBlock.classList.add("hidden");
       nameField.value = v;
-      emailField.value = INTERVIEWER_EMAILS[v] || "";
-    } else if (v === "__other__") {
-      nameField.focus();
+      emailField.value = interviewerEmailFor(v) || "";
     } else {
+      addBlock.classList.add("hidden");
       nameField.value = "";
       emailField.value = "";
     }
+  });
+  $("cal-iv-add-btn").addEventListener("click", function () {
+    var nm = $("cal-iv-new-name").value.trim();
+    if (!nm) { toast("Enter the new interviewer's name"); return; }
+    var em = $("cal-iv-new-email").value.trim();
+    API.interviewerAdd(nm, em).then(function (data) {
+      state.interviewers = data.interviewers || state.interviewers;
+      var sel = $("cal-interviewer-select");
+      sel.innerHTML = interviewerOptions();
+      sel.value = nm;
+      $("cal-interviewer").value = nm;
+      $("cal-interviewer-email").value = interviewerEmailFor(nm) || em || "";
+      $("cal-add-iv").classList.add("hidden");
+      $("cal-iv-new-name").value = "";
+      $("cal-iv-new-email").value = "";
+      toast("Interviewer \"" + nm + "\" added");
+    }).catch(showError);
   });
   $("cal-candidate").addEventListener("input", function () {
     if (!$("cal-candidate").value) $("cal-candidate").placeholder = "Candidate full name";
