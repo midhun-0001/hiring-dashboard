@@ -991,6 +991,8 @@
     if (!role) { toast("Please select a role"); return; }
     if (!date) { toast("Please set a date"); return; }
 
+    modalBusy("calendar-modal", "Saving interview…");
+
     // Interviewer: the selected directory name, or a manually typed name kept in
     // the hidden field (used for legacy records not yet in the directory).
     var ivPick = $("cal-interviewer-select").value;
@@ -1011,15 +1013,17 @@
     };
     if (calEditingId) {
       API.trackerUpdate(calEditingId, fields).then(function () {
+        modalIdle("calendar-modal");
         closeModals(); toast("Interview record updated");
         API.refresh(); loadDashboard(); loadInterviews();
-      }).catch(showError);
+      }).catch(function (err) { modalIdle("calendar-modal"); showError(err); });
     } else {
       API.trackerCreate(fields).then(function () {
+        modalIdle("calendar-modal");
         closeModals(); toast("Interview added to tracker");
         API.refresh(); loadDashboard(); loadInterviews();
         if (state.currentView === "interviews") goInterviews("upcoming");
-      }).catch(showError);
+      }).catch(function (err) { modalIdle("calendar-modal"); showError(err); });
     }
   }
 
