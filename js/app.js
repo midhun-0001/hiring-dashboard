@@ -397,7 +397,7 @@
           '<div class="dept">' + esc(r.department) + '</div>' +
         '</div><span class="badge ' + oc.cls + '">' + oc.label + '</span></div>' +
         '<div class="role-meta">' +
-          '<span class="role-meta-tag"><strong>' + (r.applicantCount || 0) + '</strong> applicants</span>' +
+          '<span class="role-meta-tag"><strong>' + (r.applicantCount || 0) + '</strong> in process</span>' +
           '<span class="role-meta-tag">Assigned to: ' + esc(r.assignedTo || r.approvalStage) + '</span>' +
         '</div></div>';
     }).join("");
@@ -421,7 +421,7 @@
     $("rd-facts").innerHTML =
       '<span>Status: ' + oc.label + '</span>' +
       '<span>Department: ' + esc(role.department) + '</span>' +
-      '<span>Applicants: ' + (role.applicantCount || 0) + '</span>' +
+      '<span>In process: ' + (role.applicantCount || 0) + '</span>' +
       '<span>Assigned to: ' + esc(role.assignedTo || role.approvalStage) + '</span>';
     goView("role-detail");
     inlineLoading($("pipeline"), "Loading applicants…");

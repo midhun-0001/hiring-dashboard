@@ -295,9 +295,10 @@ function extractDate_(s) {
  * Aggregation
  * ============================================================ */
 
-// Attach applicantCount to each role from the single Applicants tab
-// (count rows whose Role column matches the role title) plus lastActivityRow,
-// then order roles dynamically: more applicants first, ties broken by the most
+// Attach applicantCount ("in process" = total minus rejected) to each role
+// from the single Applicants tab (count rows whose Role column matches the role
+// title, excluding rejected/backed-out ones) plus lastActivityRow, then order
+// roles dynamically: more in-process applicants first, ties broken by the most
 // recent applicant (higher sheet row = more recently added/updated).
 function withCounts_(roles) {
   var all = readApplicants_();
@@ -307,6 +308,7 @@ function withCounts_(roles) {
       var a = all[j];
       if ((normTitle_(a.roleTitle) === normTitle_(r.title)) ||
           (r.id && norm_(a.roleTitle).toLowerCase() === norm_(r.id).toLowerCase())) {
+        if (isRejected_(a.status)) continue; // excluded from the in-process count
         n++;
         if (a.row && a.row > lastRow) lastRow = a.row;
       }
@@ -378,6 +380,12 @@ function byDate_(x, y) {
 function isCompleted_(status) {
   var s = norm_(status).toLowerCase();
   return s.indexOf("reject") !== -1 || s.indexOf("selected") !== -1 || s === "done" || s === "hired";
+}
+
+// True when an applicant's status marks them as rejected/backed-out.
+function isRejected_(status) {
+  var s = norm_(status).toLowerCase();
+  return s.indexOf("reject") !== -1 || s.indexOf("backout") !== -1;
 }
 
 function interviewRow_(a, iv) {
