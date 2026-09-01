@@ -275,7 +275,6 @@
     skeletonChart();
     skeletonRoles("roles-grid", 6);
     skeletonList("dashboard-upcoming", 3);
-    skeletonList("dashboard-completed", 3);
     // Let the branded overlay play briefly, then hand off to the skeletons
     // so a slow fetch shows the page taking shape instead of a blank screen.
     setTimeout(hideLoading, 900);
@@ -295,11 +294,10 @@
       hideLoading();
       hideRoleLoader();
       renderStats({ openRoles: 0, closedRoles: 0, totalApplicants: 0 });
-      ["roles-grid", "roles-chart", "dashboard-upcoming", "dashboard-completed"].forEach(function (id) { skelOff($(id)); });
+      ["roles-grid", "roles-chart", "dashboard-upcoming"].forEach(function (id) { skelOff($(id)); });
       $("roles-grid").innerHTML = '<div class="empty">Could not load roles.</div>';
       $("roles-chart").innerHTML = '<div class="empty">Could not load chart.</div>';
       $("dashboard-upcoming").innerHTML = '<div class="empty">Could not load interviews.</div>';
-      $("dashboard-completed").innerHTML = '';
       showError(arguments[0]);
     });
   }
@@ -505,7 +503,6 @@
   function renderDashboardInterviews(data) {
     var iv = (data && data.interviews) || {};
     var upcoming = iv.upcoming || (data.upcomingInterviews) || [];
-    var completed = iv.recentCompleted || [];
 
     // Upcoming in the right rail
     var upEl = $("dashboard-upcoming");
@@ -521,24 +518,6 @@
         '</div>';
       }).join("");
       upEl.querySelectorAll(".list-item").forEach(function (it) {
-        it.addEventListener("click", function () { openCandidate(it.dataset.id); });
-      });
-    }
-
-    // Latest completed (past 5) below it
-    var coEl = $("dashboard-completed");
-    skelOff(coEl);
-    if (!completed.length) {
-      coEl.innerHTML = '<div class="empty">No completed applicants yet.</div>';
-    } else {
-      coEl.innerHTML = completed.map(function (i) {
-        return '<div class="list-item" data-id="' + esc(i.id) + '">' +
-          '<div class="li-left"><div class="li-name">' + esc(i.candidate) + '</div>' +
-          '<div class="li-sub">' + esc(i.role) + (i.date ? " · " + esc(fmtDate(i.date)) : "") + '</div></div>' +
-          '<div class="li-right"><span class="badge badge-green">' + esc(i.status || "Completed") + '</span></div>' +
-        '</div>';
-      }).join("");
-      coEl.querySelectorAll(".list-item").forEach(function (it) {
         it.addEventListener("click", function () { openCandidate(it.dataset.id); });
       });
     }
