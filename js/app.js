@@ -783,7 +783,7 @@
       edit("Full Name", "name", c.name),
       edit("Email", "email", c.email),
       edit("Phone", "phone", c.phone),
-      edit("Resume / CV", "resume", c.resume),
+      resumeField(c),
       edit("Experience", "experience", c.experience),
       edit("CTC", "ctc", c.ctc),
       edit("Priority", "priority", c.priority)
@@ -806,6 +806,7 @@
     sections.push(group("Reviews", '<div class="cand-grid">' + reviews.join("") + '</div>'));
 
     $("cand-sections").innerHTML = sections.join("");
+    bindResumeDropzone($("cand-resume-drop"));
 
     $("cand-actions").innerHTML = '<button class="btn btn-primary" id="cand-schedule-btn"' + (isRejected(c.status) ? ' disabled title="Rejected profile — not tracked"' : '') + '>Add to Tracker</button>' +
       '<button class="btn btn-danger" id="cand-delete-btn">Delete Candidate</button>';
@@ -842,6 +843,88 @@
   }
   function grid(items) { return '<div class="cand-grid">' + items.join("") + '</div>'; }
   function group(title, inner) { return '<div class="cand-group"><h3>' + title + '</h3>' + inner + '</div>'; }
+
+  // Resume field shown on the candidate profile: an editable link box plus a
+  // drag-and-drop zone that uploads the file to Drive and fills the link in.
+  function resumeField(c) {
+    var link = c.resume
+      ? '<a class="cand-resume-link" href="' + esc(c.resume) + '" target="_blank" rel="noopener">View Resume</a>'
+      : '<span class="muted">No resume uploaded yet</span>';
+    return '<div class="detail-item"><div class="k">Resume / CV link</div><div class="v">' +
+      '<input class="input cedit resume-link-input" data-key="resume" type="text" value="' + esc(c.resume || "") + '" placeholder="Paste a shareable link" /></div></div>' +
+      '<div class="detail-item" style="grid-column:1/-1"><div class="v">' +
+      '<div class="resume-drop" id="cand-resume-drop" data-id="' + esc(c.id) + '">' +
+        '<div class="resume-drop-inner">Drag &amp; drop a resume here to upload, or <span class="link">browse</span></div>' +
+        '<span class="resume-drop-status">' + link + '</span>' +
+        '<input type="file" class="resume-file-input" accept=".pdf,.doc,.docx,image/*" />' +
+      '</div></div></div>';
+  }
+
+  // Wire up drag/drop + browse for one resume dropzone element. Idempotent per
+  // element (guarded by data-bound) so re-renders don't double-bind.
+  function bindResumeDropzone(dropEl) {
+    if (!dropEl || dropEl.dataset.bound) return;
+    dropEl.dataset.bound = "1";
+    var fileInput = dropEl.querySelector(".resume-file-input");
+    var statusEl = dropEl.querySelector(".resume-drop-status");
+
+    function setStatus(msg, isErr) {
+      if (!statusEl) return;
+      statusEl.innerHTML = esc(String(msg));
+      statusEl.style.color = isErr ? "var(--red)" : "";
+    }
+
+    function handleFile(file) {
+      if (!file) return;
+      var id = dropEl.dataset.id || "";
+      var candidate = ($("add-name") && $("add-name").value) ? $("add-name").value.trim() : "";
+      dropEl.classList.add("uploading");
+      setStatus("Uploading " + file.name + "…");
+      API.uploadResume(file, { id: id || undefined, candidate: candidate || undefined }).then(function (data) {
+        dropEl.classList.remove("uploading");
+        if (!data || !data.url) { setStatus("Upload failed: no link returned", true); return; }
+        fillResumeResult(dropEl, data.url, file.name);
+      }).catch(function (err) {
+        dropEl.classList.remove("uploading");
+        setStatus("Upload failed: " + (err && err.message ? err.message : err), true);
+      });
+    }
+
+    fileInput.addEventListener("change", function () { handleFile(fileInput.files && fileInput.files[0]); });
+    ["dragenter", "dragover"].forEach(function (ev) {
+      dropEl.addEventListener(ev, function (e) { e.preventDefault(); dropEl.classList.add("dragging"); });
+    });
+    ["dragleave", "drop"].forEach(function (ev) {
+      dropEl.addEventListener(ev, function (e) { e.preventDefault(); dropEl.classList.remove("dragging"); });
+    });
+    dropEl.addEventListener("drop", function (e) {
+      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) handleFile(f);
+    });
+    dropEl.addEventListener("click", function (e) {
+      if (e.target && e.target.closest && e.target.closest(".cand-resume-link")) return;
+      if (fileInput) fileInput.click();
+    });
+  }
+
+  // After a successful upload, put the Drive link where it belongs (add-modal
+  // hidden field, or the candidate profile's resume box + sheet write).
+  function fillResumeResult(dropEl, value, name) {
+    var statusEl = dropEl.querySelector(".resume-drop-status");
+    if (statusEl) {
+      statusEl.innerHTML = '<a class="cand-resume-link" href="' + esc(value) + '" target="_blank" rel="noopener">' + esc("Uploaded: " + (name || "resume")) + '</a>';
+      statusEl.style.color = "";
+    }
+    var modal = dropEl.closest && dropEl.closest(".modal");
+    if (modal && modal.id === "add-modal") {
+      if ($("add-resume")) $("add-resume").value = value;
+      return;
+    }
+    var inp = ($("cand-sections") && $("cand-sections").querySelector ? $("cand-sections").querySelector('.cedit[data-key="resume"]') : null);
+    if (inp) inp.value = value;
+    var id = dropEl.dataset.id || "";
+    if (id) API.update(id, "resume", value).then(loadDashboard).catch(function (e) { showError(e); toast("Link saved locally"); });
+  }
 
   /* ---------------- interviews page ---------------- */
 
@@ -1327,9 +1410,17 @@
       var el = $("add-" + k); if (el) el.value = "";
     });
     sel.value = "";
+    // reset the resume dropzone status + drag state
+    var drop = $("add-resume-drop");
+    if (drop) {
+      drop.classList.remove("dragging", "uploading");
+      var st = drop.querySelector(".resume-drop-status");
+      if (st) st.textContent = "";
+    }
     $("add-modal").classList.remove("hidden");
   }
 
+  bindResumeDropzone($("add-resume-drop"));
   $("add-candidate-btn").addEventListener("click", openAddModal);
   $("add-candidate-btn-2").addEventListener("click", openAddModal);
   $("add-close").addEventListener("click", closeModals);

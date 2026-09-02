@@ -690,14 +690,16 @@ function doGet(e) {
       return json_({ ok: true, tab: dloc.tab, row: dloc.row, id: did });
 
     } else if (action === "tracker" || action === "calendar") {
-      // Interview tracker listings. "upcoming" = scheduled and not yet past;
-      // "past" = the interview time has passed -> treated as completed
-      // automatically. Nothing is pushed to Google Calendar.
+      // Interview tracker listings. Classification is by DATE only: any record
+      // whose selected date is before today -> "past" (completed); today and
+      // future dates -> "upcoming". Nothing is pushed to Google Calendar.
       var evs = allInterviews_().filter(function (x) { return x.status !== "cancelled"; });
       evs.sort(function (a, b) { return (a.date + a.time).localeCompare(b.date + b.time); });
-      var now = new Date();
-      var upcoming = evs.filter(function (x) { return (x.date + " " + x.time) >= toIso_(now); });
-      var past = evs.filter(function (x) { return (x.date + " " + x.time) < toIso_(now); });
+      var p2 = function (n) { return ("0" + n).slice(-2); };
+      var today = new Date();
+      var todayStr = today.getFullYear() + "-" + p2(today.getMonth() + 1) + "-" + p2(today.getDate());
+      var upcoming = evs.filter(function (x) { return x.date >= todayStr; });
+      var past = evs.filter(function (x) { return x.date < todayStr; });
       return json_({ events: evs, upcoming: upcoming, past: past });
 
     } else if (action === "trackercreate" || action === "calendarcreate") {
@@ -780,3 +782,65 @@ function json_(obj) {
 function error_(err) {
   return ContentService.createTextOutput(JSON.stringify({ error: String(err.message || err) })).setMimeType(ContentService.MimeType.JSON);
 }
+
+/* ============================================================
+ * File upload (POST) -> resume link
+ * ============================================================
+ * The web app accepts a multipart/form POST with a field named "file"
+ * (a Blob) plus text params. Uploaded resumes are stored in a Google Drive
+ * folder ("Vyomic Resumes"), shared "anyone with the link can view", and the
+ * resulting shareable link is stored in the applicant's Resume column (F).
+ * ============================================================ */
+
+function doPost(e) {
+  try {
+    var p = (e && e.parameter) || {};
+    var action = p.action || "";
+
+    if (action !== "uploadresume") {
+      throw new Error("unknown action: " + action);
+    }
+
+    var fparam = (e && e.parameter) ? e.parameter.file : null;
+    var blob = (fparam && typeof fparam.getBytes === "function") ? fparam : null;
+    if (!blob) {
+      // Fall back to the raw POST body if the browser didn't send a named blob.
+      blob = (e && e.postData && e.postData.contents) ? Utilities.newBlob(e.postData.contents) : null;
+    }
+    if (!blob) throw new Error("no file received");
+
+    var folder = getOrCreateFolder_("Vyomic Resumes");
+    var candidateName = norm_(p.candidate || p.name || "");
+    var ext = "";
+    var m = /^(.+?)(\.[a-z0-9]{1,6})$/i.exec(norm_(p.filename || blob.getName() || ""));
+    if (m) ext = m[2];
+    var safeName = candidateName ? candidateName.replace(/[^a-z0-9 _-]+/gi, "_") : "resume";
+    var fname = (safeName || "resume") + (ext || ".pdf");
+    var file = folder.createFile(blob.setName(fname));
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    var url = file.getUrl();
+
+    // If an applicant id was supplied, write the link straight to its Resume col.
+    var id = p.id || "";
+    if (id) {
+      var loc = locateApplicant_(id);
+      if (loc) {
+        var sh = ss_().getSheetByName(loc.tab);
+        sh.getRange(loc.row, SETTINGS.APP_COLS.resume + 1, 1, 1).setValue(url);
+        cacheClear_();
+      }
+    }
+
+    return json_({ ok: true, url: url, name: fname, fileId: file.getId() });
+  } catch (err) {
+    return error_(err);
+  }
+}
+
+// Find (or create) the Drive folder used to store uploaded resumes.
+function getOrCreateFolder_(name) {
+  var it = DriveApp.getFoldersByName(name);
+  if (it.hasNext()) return it.next();
+  return DriveApp.createFolder(name);
+}
+

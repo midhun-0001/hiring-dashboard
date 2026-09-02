@@ -150,6 +150,27 @@ var API = (function () {
     },
     calendarCreate: function (f) { return this.trackerCreate(f); },
     calendarUpdate: function (id, f) { return this.trackerUpdate(id, f); },
-    calendarCancel: function (id) { return this.trackerCancel(id); }
+    calendarCancel: function (id) { return this.trackerCancel(id); },
+    uploadResume: function (file, opts) {
+      return new Promise(function (resolve, reject) {
+        if (!isConfigured()) {
+          reject(new Error("Not configured: set your Apps Script Web App URL."));
+          return;
+        }
+        var fd = new FormData();
+        fd.append("action", "uploadresume");
+        fd.append("file", file, file.name || "resume.pdf");
+        if (opts && opts.candidate) fd.append("candidate", opts.candidate);
+        if (opts && opts.id) fd.append("id", opts.id);
+        fetch(getUrl(), { method: "POST", body: fd })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (data && data.error) throw new Error(data.error);
+            cacheClear();
+            resolve(data);
+          })
+          .catch(reject);
+      });
+    }
   };
 })();

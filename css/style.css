@@ -605,6 +605,28 @@ td .inline-loader { padding: 22px 8px; }
 .add-interviewer { grid-column: 1 / -1; background: color-mix(in srgb, var(--surface) 70%, transparent); border: 1px dashed var(--border); border-radius: 8px; padding: 12px; margin-top: 2px; }
 .add-interviewer .field { margin-bottom: 14px; }
 
+/* ---------- Resume drag & drop upload ---------- */
+.link { color: var(--accent, #2563eb); text-decoration: underline; cursor: pointer; }
+.resume-link-input { margin-top: 8px; }
+.resume-drop {
+  position: relative;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius, 10px);
+  padding: 18px 14px;
+  text-align: center;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+.resume-drop:hover { border-color: #c7d2fe; }
+.resume-drop.dragging { border-color: #2563eb; background: rgba(37, 99, 235, 0.08); }
+.resume-drop.uploading { opacity: 0.7; cursor: wait; }
+.resume-drop-inner { font-size: 13px; }
+.resume-drop-status { display: block; margin-top: 8px; font-size: 12.5px; }
+.resume-drop .resume-file-input { display: none; }
+.cand-resume-link { color: var(--accent, #2563eb); text-decoration: underline; word-break: break-all; }
+
 @media (max-width: 720px) {
   .add-grid { grid-template-columns: 1fr; }
 }
