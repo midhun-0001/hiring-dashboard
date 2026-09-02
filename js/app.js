@@ -8,6 +8,8 @@
 
   var state = {
     dashboard: null,     // { stats, roles, upcomingInterviews, interviews }
+    roles: [],           // raw roles list used by the dashboard role search
+    rolesSearch: "",     // current dashboard role search query
     calendar: null,      // { events, upcoming, past } from the Interviews/calendar source
     allApplicants: [],   // global aggregated applicants
     statusOptions: [],   // allowed Status values from the sheet's dropdown (data validation)
@@ -295,7 +297,8 @@
       if (data.statusOptions && data.statusOptions.length) state.statusOptions = data.statusOptions;
       renderStats(data.stats);
       renderRoleChart(data.roles);
-      renderRoles("roles-grid", data.roles);
+      state.roles = data.roles || [];
+      renderRoles("roles-grid", state.roles);
       $("roles-count").textContent = data.roles.length + " role" + (data.roles.length === 1 ? "" : "s");
       renderDashboardInterviews(data);
       setUpdated();
@@ -403,7 +406,17 @@
     var el = $(containerId);
     skelOff(el);
     if (!roles || !roles.length) { el.innerHTML = '<div class="empty">No roles found in the Roles tab.</div>'; return; }
-    el.innerHTML = roles.map(function (r) {
+    var q = String(state.rolesSearch || "").trim().toLowerCase();
+    var shown = q ? roles.filter(function (r) {
+      return String(r.title + " " + (r.department || "")).toLowerCase().indexOf(q) !== -1;
+    }) : roles;
+    var count = $("roles-count");
+    if (count) count.textContent = shown.length + " role" + (shown.length === 1 ? "" : "s");
+    if (!shown.length) {
+      el.innerHTML = '<div class="empty">No roles match "' + esc(state.rolesSearch) + '".</div>';
+      return;
+    }
+    el.innerHTML = shown.map(function (r) {
       var oc = openClose(r.status);
       return '<div class="role-card" data-title="' + esc(r.title) + '">' +
         '<div class="role-card-head"><div>' +
@@ -459,12 +472,13 @@
         '<td>' + esc(a.ctc || "—") + '</td>' +
         '<td>' + esc(a.phone || "—") + '</td>' +
         '<td>' + (a.resume ? '<a href="' + esc(a.resume) + '" target="_blank" rel="noopener" class="resume-link" title="Open resume">View</a>' : "—") + '</td>' +
+        '<td>' + (a.email ? esc(a.email) : "—") + '</td>' +
         '<td><input class="input pipe-review" data-id="' + esc(a.id) + '" value="' + esc(a.reviewAnisha || "") + '" placeholder="Short review…" title="Type a short review, then press Enter / click away to save" /></td>' +
         '<td>' + trackBtn(a) + '</td>' +
       '</tr>';
     }).join("");
     el.innerHTML = '<div class="table-wrap"><table class="table">' +
-      '<thead><tr><th>Candidate</th><th>Status</th><th>Experience</th><th>CTC</th><th>Mobile</th><th>Resume</th><th>Short Review</th><th></th></tr></thead>' +
+      '<thead><tr><th>Candidate</th><th>Status</th><th>Experience</th><th>CTC</th><th>Mobile</th><th>Resume</th><th>Email</th><th>Short Review</th><th></th></tr></thead>' +
       '<tbody>' + rows + '</tbody></table></div>';
     el.querySelectorAll("tbody tr").forEach(function (tr) {
       tr.addEventListener("click", function (e) {
@@ -1353,6 +1367,11 @@
   $("filter-dept").addEventListener("change", function (e) { state.filters.dept = e.target.value; renderApplicants(); });
   $("filter-status").addEventListener("change", function (e) { state.filters.status = e.target.value; renderApplicants(); });
   $("filter-priority").addEventListener("change", function (e) { state.filters.priority = e.target.value; renderApplicants(); });
+
+  $("role-search").addEventListener("input", function (e) {
+    state.rolesSearch = e.target.value;
+    if (state.roles && state.roles.length) renderRoles("roles-grid", state.roles);
+  });
 
   // Inline candidate edits: any .cedit box writes straight to the sheet on change.
   $("cand-sections").addEventListener("keydown", function (e) {
