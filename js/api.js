@@ -160,6 +160,9 @@ var API = (function () {
       return call({ action: "intervieweradd", name: name, email: email });
     },
     resumeFolder: function () { return call({ action: "resumefolder" }); },
+    roleSetStatus: function (id, status, title) {
+      return call({ action: "rolesetstatus", id: id || "", status: status, title: title || "" });
+    },
     calendarCreate: function (f) { return this.trackerCreate(f); },
     calendarUpdate: function (id, f) { return this.trackerUpdate(id, f); },
     calendarCancel: function (id) { return this.trackerCancel(id); },

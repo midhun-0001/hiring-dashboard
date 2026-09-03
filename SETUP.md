@@ -158,20 +158,112 @@ You do not have permission to call DriveApp.getFoldersByName.
 Required permissions: .../auth/drive.readonly || .../auth/drive
 ```
 
-To fix it:
+**Clicking "allow" does not help, because nothing is being asked.** `oauthScopes`
+in `appsscript.json` is a **whitelist**: when it is present, Apps Script requests
+*exactly* those scopes and nothing else. A manifest listing only a Spreadsheet
+scope means Drive is never requested, so Google never prompts for it, so there
+is nothing to grant. Sheets keeps working and every Drive call keeps failing.
 
-1. In the Apps Script editor: **Project Settings** → tick
+The tell-tale pattern from `authorizeAll` — Spreadsheet `OK`, Drive **and**
+UrlFetch `FAIL`, and **no consent prompt shown**:
+
+```
+OK    Spreadsheet: Candidate Profile
+FAIL  Drive root: You do not have permission to call DriveApp.getRootFolder …
+FAIL  UrlFetch:   You do not have permission to call UrlFetchApp.fetch …
+```
+
+Note also that the [`appsscript.json`](appsscript.json) in this repo is **inert**
+— it is a reference copy. Nothing reads it unless you use `clasp`. It has to be
+edited inside the Apps Script editor.
+
+Fix it in the editor:
+
+1. **Project Settings** (gear icon, left sidebar) → tick
    *Show "appsscript.json" manifest file in editor*.
-2. Replace the manifest with the [`appsscript.json`](appsscript.json) in this
-   repo — it declares `.../auth/spreadsheets` and `.../auth/drive` explicitly,
-   so the consent screen always asks for Drive.
-3. Pick any function (e.g. `getResumeFolderLink_`) and **Run** it once. Accept
-   the Google permission prompt, including Drive.
-4. **Deploy → Manage deployments → Edit → New version → Deploy.**
+2. Open `appsscript.json` from the **Editor** file list.
+3. **Delete the entire `"oauthScopes": [ … ]` block**, including its trailing
+   comma. Save (`Ctrl+S`). That restores **automatic scope detection**: Apps
+   Script reads the code, sees `DriveApp` and `UrlFetchApp`, and requests those
+   scopes for you. Auto-detection is the robust default — it self-updates as the
+   code changes, where a hand-written whitelist silently denies whatever you
+   forgot.
+4. Select **`authorizeAll`** in the function dropdown → **Run**. A consent
+   prompt *will* appear this time → **Allow**. (If it warns about an unverified
+   app: *Advanced → Go to project → Allow*.) Re-run until every line reads `OK`:
 
-Verify with `<your /exec URL>?action=resumefolder` — it should return
-`{"ok":true,"name":"Vyomic Resumes","url":"..."}` rather than a permission
-error.
+   ```
+   OK    Spreadsheet: Candidate Profile
+   OK    Drive root: My Drive
+   OK    Resume folder: Vyomic Resumes  (https://…)
+   OK    Create + share a file: https://…  (probe trashed)
+   OK    UrlFetch (used by ?action=drivediag)
+   ```
+
+   `authorizeAll` touches Spreadsheet, Drive and UrlFetch in one pass — and
+   actually creates, shares and trashes a probe file — so a single prompt covers
+   everything upload needs. It also prints a **DIAGNOSIS** block interpreting
+   the pattern for you.
+5. **Deploy → New deployment** → Web app, Execute as **Me**, access **Anyone**.
+   Copy the new `/exec` URL into the dashboard's **Settings** and into
+   `DEFAULT_APP_URL` in [`js/api.js`](js/api.js).
+
+If you would rather keep an explicit whitelist, it must contain all three:
+
+```json
+"oauthScopes": [
+  "https://www.googleapis.com/auth/spreadsheets",
+  "https://www.googleapis.com/auth/drive",
+  "https://www.googleapis.com/auth/script.external_request"
+]
+```
+
+### Diagnosing it: `?action=drivediag`
+
+Rather than guessing, open `<your /exec URL>?action=drivediag`. It reports the
+ground truth, straight from Google's tokeninfo endpoint:
+
+```json
+{
+  "effectiveUser": "you@example.com",
+  "grantedScopes": ["https://www.googleapis.com/auth/drive", "..."],
+  "hasDriveScope": true,
+  "folderId": "16LUbWGPRZAHldrSAemMzoNY6ykaSjg-n",
+  "getFolderById": { "ok": true, "name": "Vyomic Resumes", "url": "..." },
+  "sheetFolder": { "ok": true, "name": "Hiring" },
+  "rootFolder": { "ok": true, "name": "My Drive" },
+  "resolvedFolder": { "ok": true, "name": "Vyomic Resumes", "url": "..." }
+}
+```
+
+Read it like this:
+
+- **`resolvedFolder.ok: true`** → uploads will work; that is the folder they
+  land in.
+- **`hasDriveScope: false`** → the grant is still stale. Steps 2–4 above.
+- **`effectiveUser` empty or an error** → the deployment is running as the
+  visitor, not as you. Re-deploy with *Execute as: Me*.
+- **`getFolderById.ok: false` but `resolvedFolder.ok: true`** → harmless.
+  `RESUME_FOLDER_ID` is wrong/deleted/unreachable, and uploads are falling back
+  to the spreadsheet's own folder. Fix the ID or set it to `""`.
+- **`resolvedFolder.ok: false`** → Drive is genuinely denied. The error lists
+  all three attempts.
+
+### Which folder resumes land in
+
+`resumeFolder_` tries the cheapest access first and falls through:
+
+1. `RESUME_FOLDER_ID` — one folder, by id.
+2. **The folder the spreadsheet itself lives in** — reuses the access the script
+   must already have to read the sheet, so it needs no extra permission.
+3. My Drive root.
+
+The old first step was `getFoldersByName`, a Drive-**wide search** requiring the
+broad `drive`/`drive.readonly` scope — the very call that was failing. It has
+been removed, so a narrowly-scoped grant is now enough. The old code also did
+`try { getFolderById(…) } catch (e) { byId = null; }`, which swallowed the real
+reason step 1 failed and made a bad folder id indistinguishable from a missing
+scope; all attempts are now reported together.
 
 ### How the file actually gets there
 
@@ -284,6 +376,7 @@ to free static hosting (Netlify / Vercel / GitHub Pages) and share that URL.
 | `interviewers` | — | `{ interviewers:[{name,email}] }` from the `Interviewers` tab (lists the modal's Interviewer dropdown) |
 | `intervieweradd` | `name`, `email` | Adds/updates an interviewer in the `Interviewers` tab; returns `{ interviewer, interviewers }` |
 | `resumefolder` | — | Returns the Drive folder (`Vyomic Resumes`) where uploaded resumes are stored, shared anyone-with-link: `{ name, url }` |
+| `drivediag` | — | Diagnostic: effective user, granted OAuth scopes, and the outcome of each Drive call the upload depends on. Never returns the token. |
 | `update` | `id`, `field`, `value` | Writes one field back (no permission check) |
 | `addapplicant` | `role`, `name`, `email`, … | Appends a new applicant row to the role's tab |
 | `deletecandidate` | `id` | Deletes the applicant's row from its tab |

@@ -551,15 +551,53 @@
       return '<div class="role-card' + (closed ? ' role-card-closed' : '') + '" data-title="' + esc(r.title) + '">' +
         '<div class="role-card-head"><div>' +
           '<div class="role-card-title">' + esc(r.title) + '</div>' +
-        '</div><span class="badge ' + oc.cls + '">' + oc.label + '</span></div>' +
+        '</div>' +
+        '<button type="button" class="role-status-toggle ' + (closed ? 'is-closed' : 'is-open') +
+          '" data-action="toggle-status" title="' + (closed ? 'Mark role Open' : 'Mark role Closed') + '">' +
+          '<span class="role-status-dot"></span><span class="role-status-label">' + oc.label + '</span>' +
+        '</button></div>' +
         '<div class="role-meta">' +
           '<span class="role-meta-tag"><strong>' + (r.applicantCount || 0) + '</strong> in process</span>' +
           '<span class="role-meta-tag">Assigned to: ' + esc(r.assignedTo || r.approvalStage) + '</span>' +
         '</div></div>';
     }).join("");
     el.querySelectorAll(".role-card").forEach(function (card) {
+      var toggle = card.querySelector('[data-action="toggle-status"]');
+      if (toggle) {
+        toggle.addEventListener("click", function (ev) {
+          ev.stopPropagation();
+          var title = card.dataset.title;
+          var role = null;
+          roles.forEach(function (rr) { if (!role && rr.title === title) role = rr; });
+          if (role) toggleRoleStatus(role, toggle);
+        });
+      }
       card.addEventListener("click", function () { openRoleDetail(card.dataset.title); });
     });
+  }
+
+  // Flip a role's open/closed status and persist it, updating the card in place.
+  function toggleRoleStatus(role, btn) {
+    var newStatus = String(role.status).toLowerCase() === "closed" ? "open" : "closed";
+    btn.disabled = true;
+    API.roleSetStatus(role.id, newStatus, role.title).then(function () {
+      role.status = newStatus;
+      state.roles.forEach(function (r) { if (r.title === role.title) { r.status = newStatus; } });
+      if (state.dashboard && state.dashboard.roles) {
+        state.dashboard.roles.forEach(function (r) { if (r.title === role.title) { r.status = newStatus; } });
+      }
+      renderRoles(containerIdOf(btn), state.roles);
+      toast("Role marked " + (newStatus === "closed" ? "Closed" : "Open"));
+    }).catch(function (err) {
+      btn.disabled = false;
+      showError(err);
+    });
+  }
+
+  function containerIdOf(btn) {
+    var card = btn.closest(".role-card");
+    var grid = card && card.parentElement;
+    return grid && grid.id ? grid.id : "roles-grid";
   }
 
   /* ---------------- role detail (pipeline) ---------------- */

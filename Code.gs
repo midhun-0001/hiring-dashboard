@@ -185,6 +185,23 @@ function readRoles_() {
   return out;
 }
 
+// Locate a role row in the Roles sheet (1-based) by ID, then by title.
+function locateRole_(id, title) {
+  var sh = ss_().getSheetByName(SETTINGS.ROLES_TAB_NAME);
+  if (!sh) return null;
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return null;
+  var C = SETTINGS.ROLES_COLS;
+  var data = sh.getRange(1, 1, lastRow, Math.min(sh.getLastColumn(), 4)).getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (id && norm_(data[i][C.id]) === String(id).trim()) return { row: i + 1 };
+  }
+  for (var j = 1; j < data.length; j++) {
+    if (title && norm_(data[j][C.title]) === String(title).trim()) return { row: j + 1 };
+  }
+  return null;
+}
+
 /* ============================================================
  * Applicant single-tab
  * ============================================================ */
@@ -908,11 +925,29 @@ function doGet(e) {
       var iv = addInterviewer_(p.name, p.email);
       return json_({ ok: true, interviewer: iv, interviewers: readInterviewers_() });
 
+    } else if (action === "drivediag") {
+      // Diagnostic: what Drive access does this deployment really have?
+      return json_(driveDiag_());
+
     } else if (action === "resumefolder") {
       // Drive folder where uploaded resumes are stored, shared anyone-with-link,
       // so Settings can show the user where resumes go.
       var rFolder = getResumeFolderLink_();
       return json_({ ok: true, name: rFolder.name, url: rFolder.url });
+
+    } else if (action === "rolesetstatus") {
+      // Flip a role's open/closed Status in the Roles sheet (column C).
+      cacheClear_();
+      var rsStatus = String(norm_(p.status || "")).toLowerCase() === "closed" ? "closed" : "open";
+      var rsId = norm_(p.id || "");
+      var rsTitle = norm_(p.title || "");
+      var rsLoc = locateRole_(rsId, rsTitle);
+      if (!rsLoc) throw new Error("role not found: " + (rsTitle || rsId));
+      var rsSheet = ss_().getSheetByName(SETTINGS.ROLES_TAB_NAME);
+      rsSheet.getRange(rsLoc.row, SETTINGS.ROLES_COLS.status + 1, 1, 1).setValue(
+        rsStatus === "closed" ? "Closed" : "Open"
+      );
+      return json_({ ok: true, row: rsLoc.row, status: rsStatus });
 
     } else {
       throw new Error("unknown action: " + action);
@@ -1053,10 +1088,12 @@ function uploadBlob_(p) {
   return null;
 }
 
-/* Drive needs the drive scope on the deployment's token. A Web App authorised
- * before the Drive code existed keeps its old, narrower token and every
- * DriveApp call throws "You do not have permission to call ...". Surfacing that
- * as an actionable message beats leaking the raw scope error to the UI. */
+/* Drive calls fail with "You do not have permission to call DriveApp..." when
+ * the drive scope is not on the token. The usual cause is NOT a missing consent
+ * click: it is an "oauthScopes" whitelist in appsscript.json that omits Drive,
+ * so the scope is never requested and Google never prompts for it. Telling
+ * people to "accept the prompt" in that state is a dead end - point at the
+ * manifest instead. */
 function driveFolderOrThrow_() {
   try {
     return resumeFolder_();
@@ -1064,27 +1101,215 @@ function driveFolderOrThrow_() {
     var msg = String(err && err.message ? err.message : err);
     if (msg.indexOf("permission") !== -1 || msg.indexOf("scope") !== -1 ||
         msg.indexOf("auth") !== -1) {
-      throw new Error("Google Drive access has not been granted to this deployment. " +
-        "Open the Apps Script editor, run any function once and accept the Drive " +
-        "permission prompt, then Deploy > Manage deployments > Edit > New version. " +
+      throw new Error("Drive is not authorised for this Apps Script project. " +
+        "This is almost always an oauthScopes whitelist in appsscript.json that " +
+        "omits Drive - so no consent prompt ever appears. Fix: Apps Script editor > " +
+        "Project Settings > show appsscript.json > delete the whole \"oauthScopes\" " +
+        "block > save > run authorizeAll() and accept the prompt > Deploy a new " +
+        "version. Run authorizeAll() for a per-service pass/fail report. " +
         "(Original: " + msg + ")");
     }
     throw err;
   }
 }
 
-// Google Drive folder where uploaded resumes are stored.
+// Google Drive folder where uploaded resumes are stored. Leave it as "" to let
+// resumeFolder_ fall back to the folder the spreadsheet itself lives in.
 var RESUME_FOLDER_ID = "16LUbWGPRZAHldrSAemMzoNY6ykaSjg-n";
 
-// Resolve the fixed resume Drive folder (shared among the app's use cases).
+function errMsg_(e) { return String(e && e.message ? e.message : e); }
+
+/* Resolve a folder to drop resumes into, cheapest access first.
+ *
+ * The old version's first step was `getFoldersByName`, a Drive-WIDE SEARCH that
+ * needs the broad drive/drive.readonly scope - the exact call that was failing.
+ * It is gone. Every step below touches a single known file/folder instead, so
+ * the upload works on a narrowly-scoped grant:
+ *
+ *   1. RESUME_FOLDER_ID              - one folder, by id
+ *   2. the spreadsheet's own folder   - reuses the access we must already have
+ *                                       to read the sheet at all
+ *   3. My Drive root                  - last resort, always writable
+ *
+ * It also no longer swallows errors: the old `catch (e) { byId = null; }` hid
+ * why step 1 failed, so a wrong folder id and a missing scope produced the
+ * same misleading message. */
 function resumeFolder_() {
-  var byId = null;
-  try { byId = DriveApp.getFolderById(RESUME_FOLDER_ID); } catch (e) { byId = null; }
-  if (byId) return byId;
-  // Fall back to a folder found by name, then create one if needed.
-  var it = DriveApp.getFoldersByName("Vyomic Resumes");
-  if (it.hasNext()) return it.next();
-  return DriveApp.createFolder("Vyomic Resumes");
+  var tried = [];
+
+  if (norm_(RESUME_FOLDER_ID)) {
+    try { return DriveApp.getFolderById(RESUME_FOLDER_ID); }
+    catch (e) { tried.push('getFolderById("' + RESUME_FOLDER_ID + '"): ' + errMsg_(e)); }
+  } else {
+    tried.push("RESUME_FOLDER_ID is empty - skipped");
+  }
+
+  try {
+    var parents = DriveApp.getFileById(ss_().getId()).getParents();
+    if (parents.hasNext()) return parents.next();
+    tried.push("the spreadsheet has no parent folder");
+  } catch (e2) {
+    tried.push("spreadsheet's folder: " + errMsg_(e2));
+  }
+
+  try { return DriveApp.getRootFolder(); }
+  catch (e3) { tried.push("getRootFolder: " + errMsg_(e3)); }
+
+  throw new Error("No writable Drive folder found. Tried -> " + tried.join(" | "));
+}
+
+/**
+ * ============================================================
+ *  >>> RUN THIS ONCE FROM THE APPS SCRIPT EDITOR <<<
+ * ============================================================
+ * Pick `authorizeAll` in the function dropdown and press Run.
+ *
+ * Why: the consent screen only asks for permissions the code it can see
+ * actually needs. This function touches every service the web app uses -
+ * Spreadsheet, Drive and UrlFetch - in one go, so a single prompt covers all
+ * of them. Accept it (Advanced > Go to project > Allow if it warns about an
+ * unverified app), then create a NEW deployment.
+ *
+ * It prints a pass/fail line per service, so you can see what is still denied
+ * without deploying anything.
+ */
+function authorizeAll() {
+  var report = [];
+  var sheetOk = false, driveOk = false, fetchOk = false;
+
+  try {
+    report.push("OK    Spreadsheet: " + ss_().getName());
+    sheetOk = true;
+  } catch (e) { report.push("FAIL  Spreadsheet: " + errMsg_(e)); }
+
+  try {
+    report.push("OK    Drive root: " + DriveApp.getRootFolder().getName());
+    driveOk = true;
+  } catch (e) { report.push("FAIL  Drive root: " + errMsg_(e)); }
+
+  try {
+    var f = resumeFolder_();
+    report.push("OK    Resume folder: " + f.getName() + "  (" + f.getUrl() + ")");
+  } catch (e) { report.push("FAIL  Resume folder: " + errMsg_(e)); }
+
+  // Prove we can actually create + share a file, which is what upload does.
+  try {
+    var probe = resumeFolder_().createFile(
+      Utilities.newBlob("upload permission probe", "text/plain", "vyomic-upload-probe.txt"));
+    probe.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    var url = probe.getUrl();
+    probe.setTrashed(true);   // clean up after ourselves
+    report.push("OK    Create + share a file: " + url + "  (probe trashed)");
+  } catch (e) { report.push("FAIL  Create + share a file: " + errMsg_(e)); }
+
+  try {
+    UrlFetchApp.fetch("https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=" +
+      encodeURIComponent(ScriptApp.getOAuthToken()), { muteHttpExceptions: true });
+    report.push("OK    UrlFetch (used by ?action=drivediag)");
+    fetchOk = true;
+  } catch (e) { report.push("FAIL  UrlFetch: " + errMsg_(e)); }
+
+  /* Interpret the pattern rather than leaving you to guess.
+   * Spreadsheet OK while Drive AND UrlFetch are denied, with no consent prompt
+   * shown, means the scopes were never REQUESTED - i.e. appsscript.json has an
+   * "oauthScopes" whitelist listing only a Spreadsheet scope. Google cannot
+   * prompt for a permission the script does not ask for, which is why granting
+   * "all permissions" changes nothing. */
+  report.push("");
+  if (sheetOk && !driveOk && !fetchOk) {
+    report.push("DIAGNOSIS: the scopes were never requested, so there was nothing to grant.");
+    report.push("Spreadsheet works but Drive and UrlFetch are both denied, and you saw");
+    report.push("no permission prompt. That means appsscript.json has an \"oauthScopes\"");
+    report.push("whitelist containing only a Spreadsheet scope.");
+    report.push("");
+    report.push("FIX (30 seconds, in the Apps Script editor):");
+    report.push("  1. Project Settings (gear, left sidebar)");
+    report.push("  2. tick 'Show \"appsscript.json\" manifest file in editor'");
+    report.push("  3. open appsscript.json from the Editor file list");
+    report.push("  4. DELETE the whole \"oauthScopes\": [ ... ] block, including the");
+    report.push("     trailing comma, then save (Ctrl+S)");
+    report.push("  5. run authorizeAll again -> a consent prompt WILL appear -> Allow");
+    report.push("     (if it warns 'unverified app': Advanced > Go to project > Allow)");
+    report.push("");
+    report.push("Removing the block lets Apps Script auto-detect scopes from the code.");
+    report.push("DriveApp and UrlFetchApp are referenced here, so both get requested.");
+    report.push("");
+    report.push("Then: Deploy > New deployment > Web app, Execute as Me, Access Anyone,");
+    report.push("and paste the new /exec URL into the dashboard's Settings.");
+  } else if (driveOk && fetchOk) {
+    report.push("All good - Drive and UrlFetch are authorised.");
+    report.push("Next: Deploy > New deployment (Execute as Me, Access Anyone), then put");
+    report.push("the new /exec URL in the dashboard's Settings.");
+  } else {
+    report.push("Partially authorised. Re-run after accepting any prompt; if a FAIL");
+    report.push("above names a 'Required permissions' scope, that scope is missing from");
+    report.push("appsscript.json - deleting the whole \"oauthScopes\" block is the");
+    report.push("simplest fix, as it restores automatic scope detection.");
+  }
+
+  var text = report.join("\n");
+  Logger.log(text);
+  return text;
+}
+
+/* Report what Drive access this deployment actually has, instead of guessing.
+ * Exposed as ?action=drivediag. Deliberately never returns the OAuth token -
+ * only the list of scopes it carries. */
+function driveDiag_() {
+  var out = {};
+
+  try { out.effectiveUser = Session.getEffectiveUser().getEmail(); }
+  catch (e) { out.effectiveUser = "ERR: " + (e.message || e); }
+  try { out.activeUser = Session.getActiveUser().getEmail(); }
+  catch (e) { out.activeUser = "ERR: " + (e.message || e); }
+
+  // Ask Google which scopes the running token was actually granted. This is the
+  // ground truth - the editor's consent screen and the deployment's token can
+  // and do disagree.
+  try {
+    var res = UrlFetchApp.fetch(
+      "https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=" +
+      encodeURIComponent(ScriptApp.getOAuthToken()),
+      { muteHttpExceptions: true }
+    );
+    var info = JSON.parse(res.getContentText());
+    out.grantedScopes = info.scope ? String(info.scope).split(/\s+/).sort() : info;
+  } catch (e) {
+    out.grantedScopes = "ERR: " + (e.message || e) +
+      " (add https://www.googleapis.com/auth/script.external_request to the manifest)";
+  }
+  out.hasDriveScope = (out.grantedScopes && out.grantedScopes.join)
+    ? out.grantedScopes.join(" ").indexOf("auth/drive") !== -1
+    : "unknown";
+
+  out.folderId = RESUME_FOLDER_ID;
+  try {
+    var f = DriveApp.getFolderById(RESUME_FOLDER_ID);
+    out.getFolderById = { ok: true, name: f.getName(), url: f.getUrl() };
+  } catch (e) {
+    out.getFolderById = { ok: false, error: String(e.message || e) };
+  }
+  try {
+    var parents = DriveApp.getFileById(ss_().getId()).getParents();
+    out.sheetFolder = parents.hasNext()
+      ? { ok: true, name: parents.next().getName() }
+      : { ok: false, error: "spreadsheet has no parent folder" };
+  } catch (e) {
+    out.sheetFolder = { ok: false, error: String(e.message || e) };
+  }
+  try {
+    out.rootFolder = { ok: true, name: DriveApp.getRootFolder().getName() };
+  } catch (e) {
+    out.rootFolder = { ok: false, error: String(e.message || e) };
+  }
+  // Which folder the upload would actually land in, given the above.
+  try {
+    var chosen = resumeFolder_();
+    out.resolvedFolder = { ok: true, name: chosen.getName(), url: chosen.getUrl() };
+  } catch (e) {
+    out.resolvedFolder = { ok: false, error: String(e.message || e) };
+  }
+  return out;
 }
 
 // Return the Drive folder that uploaded resumes go into, shared "anyone with the
