@@ -75,7 +75,7 @@
     </div>
   </div>
 
-  <div id="error-banner" class="error-banner hidden">
+  <div id="error-banner" class="error-banner hidden" role="alert">
     <span id="error-text"></span>
     <button id="error-dismiss" class="btn btn-ghost btn-sm">&times;</button>
   </div>
@@ -167,7 +167,14 @@
             <tbody id="applicants-body"></tbody>
           </table>
         </div>
-        <div id="applicants-empty" class="empty hidden">No applicants match your filters.</div>
+        <div id="applicants-empty" class="hidden">
+          <div class="empty-state">
+            <svg viewBox="0 0 24 24" class="empty-state-icon" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+            <div class="empty-state-title">No applicants match your filters</div>
+            <div class="empty-state-hint">Try clearing the search box or resetting a filter above.</div>
+            <button id="applicants-clear-filters" class="btn btn-sm empty-state-action">Clear all filters</button>
+          </div>
+        </div>
       </section>
     </section>
 
@@ -176,9 +183,13 @@
       <section class="panel">
         <div class="panel-head">
           <h2>Interview Tracker</h2>
-          <div class="seg" id="iv-seg">
-            <button class="seg-btn active" data-iv="upcoming">Upcoming</button>
-            <button class="seg-btn" data-iv="completed">Completed</button>
+          <div class="seg" id="iv-seg" role="tablist" aria-label="Interview list">
+            <button class="seg-btn active" data-iv="upcoming" role="tab" aria-selected="true">
+              Upcoming<span class="seg-count" id="iv-count-upcoming">–</span>
+            </button>
+            <button class="seg-btn" data-iv="completed" role="tab" aria-selected="false">
+              Completed<span class="seg-count" id="iv-count-completed">–</span>
+            </button>
           </div>
           <div class="panel-tools">
             <button id="schedule-btn" class="btn btn-primary btn-sm">
@@ -211,11 +222,11 @@
 
   </main>
 
-  <div id="toast" class="toast hidden"></div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <!-- editing modal -->
   <div id="edit-modal" class="modal hidden">
-    <div class="modal-card">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-title">
       <div class="modal-head">
         <h3 id="edit-title">Edit</h3>
         <button id="edit-close" class="btn btn-ghost btn-sm">&times;</button>
@@ -232,9 +243,9 @@
 
   <!-- add candidate modal -->
   <div id="add-modal" class="modal hidden">
-    <div class="modal-card modal-wide">
+    <div class="modal-card modal-wide" role="dialog" aria-modal="true" aria-labelledby="add-modal-title">
       <div class="modal-head">
-        <h3>Add Candidate</h3>
+        <h3 id="add-modal-title">Add Candidate</h3>
         <button id="add-close" class="btn btn-ghost btn-sm">&times;</button>
       </div>
       <form id="add-form">
@@ -250,8 +261,8 @@
           <label class="field"><span>CTC</span><input id="add-ctc" class="input" type="text" /></label>
           <label class="field"><span>Priority</span><input id="add-priority" class="input" type="text" /></label>
           <label class="field"><span>Status</span><select id="add-status" class="input"><option value="">Select status…</option></select></label>
-          <label class="field"><span>Resume / CV</span>
-            <div class="resume-drop" id="add-resume-drop">
+          <label class="field field-full"><span>Resume / CV</span>
+            <div class="resume-drop" id="add-resume-drop" tabindex="0">
               <div class="resume-drop-inner">Drag &amp; drop a resume here, or <span class="link">browse</span></div>
               <span class="resume-drop-status"></span>
               <input type="file" class="resume-file-input" accept=".pdf,.doc,.docx,image/*" />
@@ -269,7 +280,7 @@
 
   <!-- interview tracker modal -->
   <div id="calendar-modal" class="modal hidden">
-    <div class="modal-card modal-wide">
+    <div class="modal-card modal-wide" role="dialog" aria-modal="true" aria-labelledby="cal-title">
       <div class="modal-head">
         <h3 id="cal-title">Track Interview</h3>
         <button id="cal-close" class="btn btn-ghost btn-sm">&times;</button>
@@ -310,9 +321,9 @@
 
   <!-- config modal -->
   <div id="config-modal" class="modal hidden">
-    <div class="modal-card">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="config-modal-title">
       <div class="modal-head">
-        <h3>Apps Script URL</h3>
+        <h3 id="config-modal-title">Apps Script URL</h3>
         <button id="config-modal-close" class="btn btn-ghost btn-sm">&times;</button>
       </div>
       <form id="config-form">

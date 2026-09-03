@@ -41,10 +41,25 @@
   // profile can't be added to the interview tracker.
   function trackBtn(a) {
     var rejected = isRejected(a.status);
-    var attrs = 'data-cand-id="' + esc(a.id) + '"';
+    var attrs = 'data-cand-id="' + esc(a.id) + '"' +
+      ' data-cand-name="' + esc(a.name) + '"' +
+      ' data-cand-role="' + esc(a.roleTitle || "") + '"' +
+      ' data-cand-email="' + esc(a.email || "") + '"';
     if (rejected) attrs += ' disabled title="Rejected profile — not tracked"';
     else attrs += ' title="Add to interview tracker"';
     return '<button class="btn btn-sm btn-primary cal-schedule-btn" ' + attrs + '>Track</button>';
+  }
+
+  // The Track button carries the candidate's own data (name/role/email), so the
+  // tracker modal is filled from the row that was clicked — no dependency on
+  // state.allApplicants being loaded or id lookups matching.
+  function candidateFromTrackBtn(b) {
+    return {
+      id: b.dataset.candId,
+      name: b.dataset.candName,
+      roleTitle: b.dataset.candRole,
+      email: b.dataset.candEmail
+    };
   }
 
   // Categorization is display-only; the original cell text is never modified.
@@ -109,6 +124,39 @@
       (msg ? '<span class="inline-loader-msg">' + esc(msg) + '</span>' : '') + '</div>';
   }
 
+  /* ---------------- empty states ----------------
+     One markup shape for "nothing here" across every view: icon, headline,
+     hint, and an optional action button. Replaces the bare one-liners. */
+
+  var EMPTY_ICONS = {
+    roles: '<path fill="currentColor" d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/>',
+    people: '<path fill="currentColor" d="M16 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm-8 0a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-3 0-8 1.5-8 4.5V20h10v-2.5c0-1.2.7-2.3 1.8-3.1A14 14 0 0 0 8 13zm8 0c-.7 0-1.5.1-2.3.2 1.4 1 2.3 2.3 2.3 3.8V20h8v-2.5c0-3-5-4.5-8-4.5z"/>',
+    calendar: '<path fill="currentColor" d="M19 3h-1V1h-2v2H8V1H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 16H5V8h14v11z"/>',
+    check: '<path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm-1 15-4-4 1.4-1.4L11 14.2l5.6-5.6L18 10z"/>',
+    search: '<path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>',
+    warn: '<path fill="currentColor" d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>'
+  };
+
+  // opts: { icon, title, hint, actionId, actionLabel, compact, error }
+  function emptyState(opts) {
+    var o = opts || {};
+    var icon = EMPTY_ICONS[o.icon] || EMPTY_ICONS.roles;
+    var cls = "empty-state" + (o.compact ? " compact" : "") + (o.error ? " is-error" : "");
+    return '<div class="' + cls + '">' +
+      '<svg viewBox="0 0 24 24" class="empty-state-icon" aria-hidden="true">' + icon + '</svg>' +
+      '<div class="empty-state-title">' + esc(o.title || "Nothing here yet") + '</div>' +
+      (o.hint ? '<div class="empty-state-hint">' + esc(o.hint) + '</div>' : '') +
+      (o.actionLabel ? '<button class="btn btn-primary btn-sm empty-state-action"' +
+        (o.actionId ? ' id="' + o.actionId + '"' : '') + '>' + esc(o.actionLabel) + '</button>' : '') +
+      '</div>';
+  }
+
+  function showEmpty(el, opts) {
+    if (!el) return;
+    skelOff(el);
+    el.innerHTML = emptyState(opts);
+  }
+
   /* ---------------- skeleton loaders ----------------
      Content-shaped placeholders for the landing page, so the stats row,
      roles grid and rail lists animate while the dashboard fetch is in
@@ -171,6 +219,19 @@
         '<div class="skel" style="flex:1;height:14px;border-radius:7px"></div>' +
         '<div class="skel skel-line" style="width:20px;height:12px"></div>' +
       '</div>') + '</div>');
+  }
+
+  /* Table placeholder: `headers` are the real <th> labels so the column widths
+     settle before the data lands instead of jumping when it does. */
+  function skeletonTable(el, headers, rowCount) {
+    if (!el) return;
+    var widths = ["w-lg", "w-md", "w-sm", "w-sm", "w-md", "w-sm", "w-sm", "w-sm", "w-sm"];
+    var body = rep(rowCount || 5, '<tr>' + headers.map(function (h, i) {
+      return '<td><div class="skel skel-cell ' + (widths[i] || "w-md") + '"></div></td>';
+    }).join("") + '</tr>');
+    el.innerHTML = '<table class="table skel-table"><thead><tr>' +
+      headers.map(function (h) { return '<th>' + esc(h) + '</th>'; }).join("") +
+      '</tr></thead><tbody class="skel-stagger">' + body + '</tbody></table>';
   }
 
   /* Candidate profile: mirrors the four groups renderCandidate builds
@@ -304,10 +365,12 @@
       hideLoading();
       hideRoleLoader();
       renderStats({ openRoles: 0, closedRoles: 0, totalApplicants: 0 });
-      ["roles-grid", "roles-chart", "dashboard-upcoming"].forEach(function (id) { skelOff($(id)); });
-      $("roles-grid").innerHTML = '<div class="empty">Could not load roles.</div>';
-      $("roles-chart").innerHTML = '<div class="empty">Could not load chart.</div>';
-      $("dashboard-upcoming").innerHTML = '<div class="empty">Could not load interviews.</div>';
+      showEmpty($("roles-grid"), {
+        icon: "warn", error: true, title: "Couldn't load roles",
+        hint: "The Apps Script request failed. Check the Web App URL in Settings, then try again."
+      });
+      showEmpty($("roles-chart"), { icon: "warn", error: true, compact: true, title: "No chart data" });
+      showEmpty($("dashboard-upcoming"), { icon: "warn", error: true, compact: true, title: "No interview data" });
       showError(arguments[0]);
     });
   }
@@ -321,7 +384,10 @@
     skelOff(el);
     var countEl = $("chart-count");
     var list = (roles || []).slice();
-    if (!list.length) { el.innerHTML = '<div class="empty">No roles yet.</div>'; return; }
+    if (!list.length) {
+      showEmpty(el, { icon: "roles", compact: true, title: "No roles yet", hint: "Add rows to the Roles tab of the sheet." });
+      return;
+    }
     list.sort(function (a, b) { return (b.applicantCount || 0) - (a.applicantCount || 0); });
     var max = 1;
     list.forEach(function (r) { var n = r.applicantCount || 0; if (n > max) max = n; });
@@ -352,6 +418,13 @@
       el.innerHTML = html;
       var btn = $("chart-expand-btn");
       if (btn) btn.addEventListener("click", function () { expanded = true; render(); });
+      // The fills carry `transition: width` but were painted at their final width,
+      // so the transition never fired. Start at 0 and grow on the next frame.
+      var fills = el.querySelectorAll(".chart-hbar-fill");
+      fills.forEach(function (f) { f.dataset.w = f.style.width; f.style.width = "0%"; });
+      requestAnimationFrame(function () {
+        fills.forEach(function (f) { f.style.width = f.dataset.w; });
+      });
     }
 
     render();
@@ -361,14 +434,35 @@
   function loadAllApplicants() {
     var body = $("applicants-body");
     var empty = $("applicants-empty");
-    if (body) body.innerHTML = '<tr><td colspan="8"><div class="inline-loader"><span class="inline-spinner"></span><span class="inline-loader-msg">Loading applicants…</span></div></td></tr>';
+    // skeleton rows (7 columns, matching the thead) rather than one spinner cell
+    if (body) {
+      body.className = "skel-stagger";
+      body.innerHTML = rep(6, '<tr>' +
+        '<td><div class="skel skel-cell w-lg"></div></td>' +
+        '<td><div class="skel skel-cell w-md"></div></td>' +
+        '<td><div class="skel skel-cell w-sm"></div></td>' +
+        '<td><div class="skel skel-cell w-sm"></div></td>' +
+        '<td><div class="skel skel-cell w-sm"></div></td>' +
+        '<td><div class="skel skel-badge"></div></td>' +
+        '<td><div class="skel skel-cell w-sm"></div></td>' +
+      '</tr>');
+    }
     if (empty) empty.classList.add("hidden");
     API.applicants().then(function (data) {
       state.allApplicants = data.applicants || [];
       if (data.statusOptions && data.statusOptions.length) state.statusOptions = data.statusOptions;
       buildApplicantFilters();
       renderApplicants();
-    }).catch(showError);
+    }).catch(function (err) {
+      if (body) {
+        body.className = "";
+        body.innerHTML = '<tr><td colspan="7">' + emptyState({
+          icon: "warn", error: true, title: "Couldn't load applicants",
+          hint: (err && err.message) ? err.message : "The Apps Script request failed."
+        }) + '</td></tr>';
+      }
+      showError(err);
+    });
   }
 
   // load applicants lazily after dashboard (avoids two round-trips on load)
@@ -399,7 +493,13 @@
   function renderRoles(containerId, roles) {
     var el = $(containerId);
     skelOff(el);
-    if (!roles || !roles.length) { el.innerHTML = '<div class="empty">No roles found in the Roles tab.</div>'; return; }
+    if (!roles || !roles.length) {
+      showEmpty(el, {
+        icon: "roles", title: "No roles found",
+        hint: "The Roles tab of the connected sheet is empty. Add a row with a Role ID and Position to see it here."
+      });
+      return;
+    }
     var q = String(state.rolesSearch || "").trim().toLowerCase();
     var shown = q ? roles.filter(function (r) {
       return String(r.title).toLowerCase().indexOf(q) !== -1;
@@ -407,9 +507,14 @@
     var count = $("roles-count");
     if (count) count.textContent = shown.length + " role" + (shown.length === 1 ? "" : "s");
     if (!shown.length) {
-      el.innerHTML = '<div class="empty">No roles match "' + esc(state.rolesSearch) + '".</div>';
+      showEmpty(el, {
+        icon: "search", title: 'No roles match "' + state.rolesSearch + '"',
+        hint: "Try a shorter search term, or clear the box to see all roles."
+      });
       return;
     }
+    // no entrance replay while the search box is narrowing the grid
+    el.classList.toggle("no-anim", !!q);
     el.innerHTML = shown.map(function (r) {
       var oc = openClose(r.status);
       var closed = String(r.status).toLowerCase() === "closed";
@@ -452,7 +557,13 @@
 
   function renderPipeline(applicants) {
     var el = $("pipeline");
-    if (!applicants.length) { el.innerHTML = '<div class="empty">No applicants for this role yet.</div>'; return; }
+    if (!applicants.length) {
+      showEmpty(el, {
+        icon: "people", title: "No applicants for this role yet",
+        hint: "Applicants whose “Position Applied For” matches this role will appear here."
+      });
+      return;
+    }
     // Rejected profiles sink to the bottom; the rest keep their order.
     var sorted = applicants.slice().sort(function (a, b) {
       return (isRejected(a.status) ? 1 : 0) - (isRejected(b.status) ? 1 : 0);
@@ -500,8 +611,7 @@
     el.querySelectorAll(".cal-schedule-btn").forEach(function (b) {
       b.addEventListener("click", function (e) {
         e.stopPropagation();
-        var a = (state.allApplicants || []).filter(function (x) { return x.id === b.dataset.candId; })[0] || {};
-        openCalendarModal(null, a);
+        openCalendarModal(null, candidateFromTrackBtn(b));
       });
     });
   }
@@ -516,7 +626,11 @@
     var upEl = $("dashboard-upcoming");
     skelOff(upEl);
     if (!upcoming.length) {
-      upEl.innerHTML = '<div class="empty">No confirmed upcoming interviews.</div>';
+      upEl.innerHTML = emptyState({
+        icon: "calendar", compact: true,
+        title: "Nothing scheduled",
+        hint: "Interviews you add in the Interviews tab show up here."
+      });
     } else {
       upEl.innerHTML = upcoming.map(function (i) {
         return '<div class="list-item" data-id="' + esc(i.id) + '">' +
@@ -705,6 +819,12 @@
     var body = $("applicants-body");
     var empty = $("applicants-empty");
     var list = filteredApplicants();
+    // drop the skeleton stagger; suppress the row entrance while filtering so
+    // typing in the search box doesn't replay it on every keystroke
+    var filtering = ["app-search", "filter-role", "filter-status", "filter-priority"].some(function (id) {
+      var el = $(id); return el && el.value;
+    });
+    body.className = filtering ? "no-anim" : "";
     empty.classList.toggle("hidden", list.length !== 0);
     if (!list.length) { body.innerHTML = ""; return; }
     body.innerHTML = list.map(function (a) {
@@ -733,8 +853,7 @@
     body.querySelectorAll(".cal-schedule-btn").forEach(function (b) {
       b.addEventListener("click", function (e) {
         e.stopPropagation();
-        var a = (state.allApplicants || []).filter(function (x) { return x.id === b.dataset.candId; })[0] || {};
-        openCalendarModal(null, a);
+        openCalendarModal(null, candidateFromTrackBtn(b));
       });
     });
   }
@@ -750,7 +869,10 @@
     }).catch(function (err) {
       skelOff($("cand-sections"));
       skelOff($("cand-actions"));
-      $("cand-sections").innerHTML = '<div class="empty">Could not load this candidate.</div>';
+      $("cand-sections").innerHTML = emptyState({
+        icon: "warn", error: true, title: "Couldn't load this candidate",
+        hint: (err && err.message) ? err.message : "The Apps Script request failed."
+      });
       $("cand-actions").innerHTML = "";
       $("cand-name").textContent = "Candidate";
       $("cand-role-badge").className = "badge badge-blue";
@@ -920,83 +1042,180 @@
   function goInterviews(seg) {
     state.currentIvSeg = seg;
     document.querySelectorAll("#iv-seg .seg-btn").forEach(function (b) {
-      b.classList.toggle("active", b.dataset.iv === seg);
+      var on = b.dataset.iv === seg;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-selected", on ? "true" : "false");
     });
     renderInterviewsPage();
   }
 
   // Interview records come from the tracker (Interview Events sheet); past
   // records are auto-classified as completed by the backend.
+  var IV_HEADERS = ["Candidate", "Role", "When", "Interviewer", "Duration", "Status"];
+  var ivLoading = false;
+
   function loadInterviews() {
+    if (ivLoading) return;
+    ivLoading = true;
     API.tracker().then(function (data) {
+      ivLoading = false;
       state.calendar = data;
+      updateIvCounts();
       if (state.currentView === "interviews") renderInterviewsPage();
-    }).catch(showError);
+    }).catch(function (err) {
+      ivLoading = false;
+      // Leave a real error state instead of a spinner that never stops.
+      if (state.currentView === "interviews") {
+        showEmpty($("interviews-body"), {
+          icon: "warn", error: true,
+          title: "Couldn't load the interview tracker",
+          hint: (err && err.message) ? err.message : "The Apps Script request failed.",
+          actionId: "iv-retry-btn", actionLabel: "Try again"
+        });
+        var retry = $("iv-retry-btn");
+        if (retry) retry.addEventListener("click", function () {
+          skeletonTable($("interviews-body"), IV_HEADERS, 5);
+          loadInterviews();
+        });
+      }
+      showError(err);
+    });
+  }
+
+  // Live counts in the segmented control so both buckets are visible at a glance.
+  function updateIvCounts() {
+    var cal = state.calendar || {};
+    var up = $("iv-count-upcoming"), done = $("iv-count-completed");
+    if (up) up.textContent = String((cal.upcoming || []).length);
+    if (done) done.textContent = String((cal.past || []).length);
+  }
+
+  // Day-accurate difference between an ISO date and today, for the "in 3 days"
+  // hint. Returns null when the date isn't a parseable YYYY-MM-DD.
+  function daysFromToday(iso) {
+    var m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return null;
+    var then = new Date(+m[1], +m[2] - 1, +m[3]);
+    var now = new Date();
+    now = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.round((then - now) / 86400000);
+  }
+
+  function relativeDay(iso) {
+    var d = daysFromToday(iso);
+    if (d === null) return "";
+    if (d === 0) return "Today";
+    if (d === 1) return "Tomorrow";
+    if (d === -1) return "Yesterday";
+    if (d > 1) return "in " + d + " days";
+    return Math.abs(d) + " days ago";
+  }
+
+  // Badge reflects the record's own date rather than which tab you're looking at.
+  function ivStatusBadge(rec) {
+    var d = daysFromToday(rec.date);
+    if (d === null) return { cls: "badge-gray", label: "No date" };
+    if (d < 0) return { cls: "badge-green", label: "Completed" };
+    if (d === 0) return { cls: "badge-amber", label: "Today" };
+    if (d === 1) return { cls: "badge-blue", label: "Tomorrow" };
+    return { cls: "badge-blue", label: "Scheduled" };
+  }
+
+  function initials(name) {
+    var parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return "?";
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }
 
   function renderInterviewsPage() {
     var el = $("interviews-body");
-    if (!state.calendar) { inlineLoading(el, "Loading interview tracker…"); loadInterviews(); return; }
+    if (!state.calendar) { skeletonTable(el, IV_HEADERS, 5); loadInterviews(); return; }
 
     var cal = state.calendar;
     var seg = state.currentIvSeg;
-    var list, emptyMsg;
-    if (seg === "completed") {
-      list = cal.past || [];
-      emptyMsg = "No completed interviews yet. Past interview records move here automatically.";
-    } else {
-      list = cal.upcoming || cal.events || [];
-      emptyMsg = "No upcoming interviews. Add one to start tracking.";
+    var list = seg === "completed" ? (cal.past || []) : (cal.upcoming || cal.events || []);
+    updateIvCounts();
+
+    // The completed-list Decision dropdown maps back to an applicant, so it needs
+    // the applicant directory. Guarded by a flag: without it, an empty applicant
+    // list re-triggered the fetch on every re-render, forever.
+    if (seg === "completed") loadApplicantsForDecisions();
+
+    if (!list.length) {
+      if (seg === "completed") {
+        showEmpty(el, {
+          icon: "check",
+          title: "No completed interviews yet",
+          hint: "Once an interview's date has passed it moves here automatically, where you can record the outcome."
+        });
+      } else {
+        showEmpty(el, {
+          icon: "calendar",
+          title: "No interviews scheduled",
+          hint: "Add an interview to start tracking who is meeting which candidate, and when.",
+          actionId: "iv-empty-add", actionLabel: "Add Interview"
+        });
+        var addBtn = $("iv-empty-add");
+        if (addBtn) addBtn.addEventListener("click", function () { openCalendarModal(null); });
+      }
+      return;
     }
 
-    // The completed-list Decision dropdown must map back to an applicant, so we
-    // need the applicant directory. It's normally lazy-loaded only on the
-    // applicants view, so fetch it here too (re-renders when it arrives).
-    if (seg === "completed" && !(state.allApplicants && state.allApplicants.length)) {
-      loadApplicantsForDecisions();
-    }
-
-    if (!list.length) { el.innerHTML = '<div class="empty">' + esc(emptyMsg) + '</div>'; return; }
+    var showDecision = seg === "completed";
 
     var rows = list.map(function (i) {
-      var statusBadgeCls = seg === "completed" ? "badge-green" : "badge-blue";
-      var statusLabel = seg === "completed" ? "Completed" : "Scheduled";
+      var b = ivStatusBadge(i);
+      var role = i.role || i.roleTitle || "";
+      var rel = relativeDay(i.date);
+      var isToday = daysFromToday(i.date) === 0;
 
-      var action = i.eventId
-        ? '<button class="btn btn-sm btn-ghost" data-edit-evt="' + esc(i.eventId) + '">Edit</button>'
-        : "";
+      var when = '<div class="iv-when">' +
+        '<span class="iv-when-date">' + (i.date ? esc(fmtDate(i.date)) : "—") +
+          (i.time ? ' · ' + esc(fmtTime(i.time)) : '') + '</span>' +
+        (rel ? '<span class="iv-when-rel">' + esc(rel) + '</span>' : '') +
+      '</div>';
+
+      var person = i.interviewer
+        ? '<div class="iv-person"><span class="iv-avatar">' + esc(initials(i.interviewer)) + '</span>' +
+          '<span>' + esc(i.interviewer) + '</span></div>'
+        : '<span class="iv-unassigned">Unassigned</span>';
 
       var decideCell = "";
-      if (seg === "completed") {
-        // A per-row decision for the completed interview. Only "Rejected" has a
-        // side effect: it sets the candidate's Status to "Rejected" in the main
-        // applicants place. "Pass" is informational and changes nothing.
-        var matched = findApplicant(i.candidate, i.role || i.roleTitle || "");
-        var selected = (matched && isRejected(matched.status) ? ' selected' : '');
-        decideCell = '<td><select class="input iv-decision" data-cand="' + esc(i.candidate) + '" data-role="' + esc(i.role || i.roleTitle || "") + '">' +
-          '<option value="">—</option>' +
-          '<option value="Pass">Pass</option>' +
-          '<option value="Rejected"' + selected + '>Rejected</option>' +
+      if (showDecision) {
+        // Only "Rejected" has a side effect: it writes Status=Rejected back to the
+        // applicant row. Rendered disabled when no applicant matches the name.
+        var matched = findApplicant(i.candidate, role);
+        var sel = (matched && isRejected(matched.status)) ? ' selected' : '';
+        decideCell = '<td><select class="input iv-decision"' +
+          (matched ? '' : ' disabled title="No applicant matches this name"') +
+          ' data-cand="' + esc(i.candidate) + '" data-role="' + esc(role) + '">' +
+          '<option value="">Record outcome…</option>' +
+          '<option value="Rejected"' + sel + '>Rejected</option>' +
           '</select></td>';
       }
 
-      return '<tr data-id="' + esc(i.id || "") + '">' +
-        '<td class="cell-primary">' + esc(i.candidate) + '</td>' +
-        '<td>' + esc(i.role || i.roleTitle || "—") + '</td>' +
-        '<td>' + esc(fmtDate(i.date)) + '</td>' +
-        '<td>' + esc(fmtTime(i.time)) + '</td>' +
-        '<td>' + esc(i.interviewer || "—") + '</td>' +
-        '<td>' + esc(i.duration ? i.duration + " min" : "—") + '</td>' +
-        '<td><span class="badge ' + statusBadgeCls + '">' + esc(statusLabel) + '</span></td>' +
+      var action = i.eventId
+        ? '<button class="btn btn-sm btn-ghost" data-edit-evt="' + esc(i.eventId) + '" title="Edit this interview">Edit</button>'
+        : "";
+
+      return '<tr' + (isToday ? ' class="iv-row-today"' : '') + '>' +
+        '<td class="cell-primary">' + esc(i.candidate || "—") + '</td>' +
+        '<td>' + (role ? esc(role) : '<span class="cell-sub">—</span>') + '</td>' +
+        '<td>' + when + '</td>' +
+        '<td>' + person + '</td>' +
+        '<td>' + (i.duration ? esc(i.duration) + " min" : '<span class="cell-sub">—</span>') + '</td>' +
+        '<td><span class="badge ' + b.cls + '">' + esc(b.label) + '</span></td>' +
         decideCell +
         '<td>' + action + '</td>' +
       '</tr>';
     }).join("");
 
-    el.innerHTML = '<table class="table"><thead><tr>' +
-      '<th>Candidate</th><th>Role</th><th>Date</th><th>Time</th><th>Interviewer</th><th>Duration</th><th>Status</th>' +
-      (seg === "completed" ? '<th>Decision</th>' : '') +
-      '<th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+    var head = IV_HEADERS.map(function (h) { return '<th>' + h + '</th>'; }).join("") +
+      (showDecision ? '<th>Decision</th>' : '') + '<th></th>';
+
+    el.innerHTML = '<table class="table"><thead><tr>' + head +
+      '</tr></thead><tbody>' + rows + '</tbody></table>';
 
     el.querySelectorAll("[data-edit-evt]").forEach(function (b) {
       b.addEventListener("click", function (e) { e.stopPropagation(); openCalendarModal(b.dataset.editEvt); });
@@ -1006,7 +1225,6 @@
       sel.addEventListener("click", function (e) { e.stopPropagation(); });
       sel.addEventListener("change", function () {
         if (sel.value === "Rejected") decideRejected(sel.dataset.cand, sel.dataset.role, sel);
-        else sel.dataset.planned = sel.value;
       });
     });
   }
@@ -1029,12 +1247,17 @@
 
   // Fetch the applicant directory just to power the completed-list decisions,
   // without switching views; re-renders the completed list once loaded.
+  // `decisionsFetched` matters: the re-render calls straight back into here, so
+  // without a latch an empty applicant list loops render -> fetch -> render.
+  var decisionsFetched = false;
   function loadApplicantsForDecisions() {
+    if (decisionsFetched || (state.allApplicants && state.allApplicants.length)) return;
+    decisionsFetched = true;
     API.applicants().then(function (data) {
       state.allApplicants = data.applicants || [];
       if (data.statusOptions && data.statusOptions.length) state.statusOptions = data.statusOptions;
       if (state.currentView === "interviews" && state.currentIvSeg === "completed") renderInterviewsPage();
-    }).catch(showError);
+    }).catch(function (err) { decisionsFetched = false; showError(err); });
   }
 
   function decideRejected(name, role, sel) {
@@ -1277,6 +1500,13 @@
     if (state.currentView === "role-detail" && state.currentRole) { openRoleDetail(state.currentRole.title); return; }
     loadDashboard();
     if (state.currentView === "applicants") loadAllApplicants();
+    if (state.currentView === "interviews") {
+      // the tracker was previously only fetched when state.calendar was null, so
+      // Refresh left the interview list frozen for the whole session
+      state.calendar = null;
+      skeletonTable($("interviews-body"), IV_HEADERS, 5);
+      loadInterviews();
+    }
     toast("Refreshing…");
   }
 
@@ -1495,6 +1725,24 @@
 
   document.addEventListener("click", function (e) {
     if (e.target.classList && e.target.classList.contains("modal")) closeModals();
+  });
+
+  // Escape closes whichever modal is open (there was no keyboard escape route).
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape") return;
+    var open = document.querySelector(".modal:not(.hidden)");
+    if (!open) return;
+    if (open.querySelector(".modal-busy-veil")) return; // a save is in flight
+    closeModals();
+  });
+
+  // "Clear all filters" in the applicants empty state
+  var clearFiltersBtn = $("applicants-clear-filters");
+  if (clearFiltersBtn) clearFiltersBtn.addEventListener("click", function () {
+    ["app-search", "filter-role", "filter-status", "filter-priority"].forEach(function (id) {
+      var el = $(id); if (el) el.value = "";
+    });
+    renderApplicants();
   });
 
   /* ---------------- init ---------------- */
