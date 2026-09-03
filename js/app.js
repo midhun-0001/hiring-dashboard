@@ -1397,6 +1397,18 @@
     ["name","email","phone","experience","ctc","priority","status","resume"].forEach(function (k) {
       var el = $("add-" + k); if (el) el.value = "";
     });
+    // populate the Status dropdown from the sheet's data-validation list
+    var opts = (state.statusOptions || []).slice();
+    if (!opts.length) {
+      state.allApplicants.forEach(function (a) {
+        var s = String(a.status || "").trim();
+        if (s && opts.indexOf(s) === -1) opts.push(s);
+      });
+    }
+    opts.sort(function (a, b) { return a.localeCompare(b); });
+    $("add-status").innerHTML = '<option value="">Select status…</option>' + opts.map(function (o) {
+      return '<option value="' + esc(o) + '">' + esc(o) + '</option>';
+    }).join("");
     sel.value = "";
     // reset the resume dropzone status + drag state
     var drop = $("add-resume-drop");
