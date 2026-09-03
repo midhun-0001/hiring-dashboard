@@ -319,21 +319,12 @@
   function openConfigModal() {
     $("config-input").value = API.getUrl();
     $("config-modal").classList.remove("hidden");
-    // Show where uploaded resumes go (Drive folder link), when available.
+    // Resumes now use the local/git workflow (no Drive upload): save a copy,
+    // drop it into the repo under resumes/, then paste the GitHub raw link into
+    // the candidate's Resume field.
     var holder = $("config-resume-folder");
     if (holder) {
-      holder.innerHTML = '<span class="config-resume-folder-status">Loading…</span>';
-      API.resumeFolder().then(function (d) {
-        if (!holder) return;
-        if (d && d.url) {
-          holder.innerHTML = '<a class="link" href="' + esc(d.url) + '" target="_blank" rel="noopener">' + esc(d.name || "Vyomic Resumes") + ' — open in Drive</a>';
-        } else {
-          holder.innerHTML = '<span class="config-resume-folder-status">No folder link returned.</span>';
-        }
-      }).catch(function () {
-        if (!holder) return;
-        holder.innerHTML = '<span class="config-resume-folder-status">Unavailable — ensure Code.gs is re-deployed.</span>';
-      });
+      holder.innerHTML = '<span class="config-resume-folder-status">Resumes are stored in the repo (resumes/) and linked by GitHub raw URL — not uploaded to Drive.</span>';
     }
   }
   function closeModals() {
@@ -1055,16 +1046,18 @@
   function group(title, inner) { return '<div class="cand-group"><h3>' + title + '</h3>' + inner + '</div>'; }
 
   // Resume field shown on the candidate profile: an editable link box plus a
-  // drag-and-drop zone that uploads the file to Drive and fills the link in.
+  // Dropzone for the local/git workflow: it does NOT upload anywhere. It saves a
+  // copy of the file so you can drop it into the repo, and you paste the GitHub
+  // raw link into the resume field below.
   function resumeField(c) {
     var link = c.resume
       ? '<a class="cand-resume-link" href="' + esc(c.resume) + '" target="_blank" rel="noopener">View Resume</a>'
-      : '<span class="muted">No resume uploaded yet</span>';
+      : '<span class="muted">No resume linked yet</span>';
     return '<div class="detail-item"><div class="k">Resume / CV link</div><div class="v">' +
-      '<input class="input cedit resume-link-input" data-key="resume" type="text" value="' + esc(c.resume || "") + '" placeholder="Paste a shareable link" /></div></div>' +
+      '<input class="input cedit resume-link-input" data-key="resume" type="text" value="' + esc(c.resume || "") + '" placeholder="Paste a GitHub raw link" /></div></div>' +
       '<div class="detail-item" style="grid-column:1/-1"><div class="v">' +
       '<div class="resume-drop" id="cand-resume-drop" data-id="' + esc(c.id) + '">' +
-        '<div class="resume-drop-inner">Drag &amp; drop a resume here to upload, or <span class="link">browse</span></div>' +
+        '<div class="resume-drop-inner">Drop a resume to save it locally for the repo, or <span class="link">browse</span></div>' +
         '<span class="resume-drop-status">' + link + '</span>' +
         '<input type="file" class="resume-file-input" accept=".pdf,.doc,.docx,image/*" />' +
       '</div></div></div>';
@@ -1086,18 +1079,24 @@
 
     function handleFile(file) {
       if (!file) return;
-      var id = dropEl.dataset.id || "";
-      var candidate = ($("add-name") && $("add-name").value) ? $("add-name").value.trim() : "";
       dropEl.classList.add("uploading");
-      setStatus("Uploading " + file.name + "…");
-      API.uploadResume(file, { id: id || undefined, candidate: candidate || undefined }).then(function (data) {
-        dropEl.classList.remove("uploading");
-        if (!data || !data.url) { setStatus("Upload failed: no link returned", true); return; }
-        fillResumeResult(dropEl, data.url, file.name);
-      }).catch(function (err) {
-        dropEl.classList.remove("uploading");
-        setStatus("Upload failed: " + (err && err.message ? err.message : err), true);
-      });
+      setStatus("Saving " + file.name + " locally…");
+      // Local/git workflow: no Drive upload. Hand back a clean copy of the file
+      // so the user can drop it into the repo, then paste the GitHub raw link
+      // into the resume field.
+      var src = null;
+      try { src = URL.createObjectURL(file); } catch (e) { src = null; }
+      if (src) {
+        var a = document.createElement("a");
+        a.href = src;
+        a.download = file.name || "resume";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () { try { URL.revokeObjectURL(src); } catch (e) {} }, 8000);
+      }
+      dropEl.classList.remove("uploading");
+      setStatus("Saved " + esc(file.name) + " locally. Add it under resumes/ in the repo, commit & push, then paste the GitHub raw link into the resume field above.");
     }
 
     fileInput.addEventListener("change", function () { handleFile(fileInput.files && fileInput.files[0]); });
@@ -1115,25 +1114,6 @@
       if (e.target && e.target.closest && e.target.closest(".cand-resume-link")) return;
       if (fileInput) fileInput.click();
     });
-  }
-
-  // After a successful upload, put the Drive link where it belongs (add-modal
-  // hidden field, or the candidate profile's resume box + sheet write).
-  function fillResumeResult(dropEl, value, name) {
-    var statusEl = dropEl.querySelector(".resume-drop-status");
-    if (statusEl) {
-      statusEl.innerHTML = '<a class="cand-resume-link" href="' + esc(value) + '" target="_blank" rel="noopener">' + esc("Uploaded: " + (name || "resume")) + '</a>';
-      statusEl.style.color = "";
-    }
-    var modal = dropEl.closest && dropEl.closest(".modal");
-    if (modal && modal.id === "add-modal") {
-      if ($("add-resume")) $("add-resume").value = value;
-      return;
-    }
-    var inp = ($("cand-sections") && $("cand-sections").querySelector ? $("cand-sections").querySelector('.cedit[data-key="resume"]') : null);
-    if (inp) inp.value = value;
-    var id = dropEl.dataset.id || "";
-    if (id) API.update(id, "resume", value).then(loadDashboard).catch(function (e) { showError(e); toast("Link saved locally"); });
   }
 
   /* ---------------- interviews page ---------------- */

@@ -276,11 +276,11 @@
           <label class="field"><span>Status</span><select id="add-status" class="input"><option value="">Select status…</option></select></label>
           <label class="field field-full"><span>Resume / CV</span>
             <div class="resume-drop" id="add-resume-drop" tabindex="0">
-              <div class="resume-drop-inner">Drag &amp; drop a resume here, or <span class="link">browse</span></div>
+              <div class="resume-drop-inner">Drop a resume to save it locally for the repo, or <span class="link">browse</span></div>
               <span class="resume-drop-status"></span>
               <input type="file" class="resume-file-input" accept=".pdf,.doc,.docx,image/*" />
             </div>
-            <input id="add-resume" class="input resume-link-input" type="text" placeholder="…or paste a shareable link" />
+            <input id="add-resume" class="input resume-link-input" type="text" placeholder="…or paste a GitHub raw link" />
           </label>
         </div>
         <div class="modal-actions">
@@ -353,11 +353,11 @@
           <small>Deploy your Code.gs as a Web App, then paste the /exec link here.</small>
         </label>
         <label class="field">
-          <span>Resume Drive Folder</span>
+          <span>Resume Storage</span>
           <div id="config-resume-folder" class="config-resume-folder">
             <span class="config-resume-folder-status">Loading…</span>
           </div>
-          <small>Uploaded resumes are stored here (Drive folder "Vyomic Resumes").</small>
+          <small>Resumes are kept in the repo (resumes/) and linked by GitHub raw URL — no Drive upload.</small>
         </label>
         <div class="modal-actions">
           <button type="button" id="config-clear-btn" class="btn btn-ghost">Clear</button>
