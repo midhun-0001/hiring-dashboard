@@ -412,7 +412,8 @@
     }
     el.innerHTML = shown.map(function (r) {
       var oc = openClose(r.status);
-      return '<div class="role-card" data-title="' + esc(r.title) + '">' +
+      var closed = String(r.status).toLowerCase() === "closed";
+      return '<div class="role-card' + (closed ? ' role-card-closed' : '') + '" data-title="' + esc(r.title) + '">' +
         '<div class="role-card-head"><div>' +
           '<div class="role-card-title">' + esc(r.title) + '</div>' +
         '</div><span class="badge ' + oc.cls + '">' + oc.label + '</span></div>' +
