@@ -60,9 +60,24 @@ var API = (function () {
   }
   function cacheClear() { cache = {}; }
 
-  function fetchRemote(params) {
-    var qs = new URLSearchParams(params).toString();
-    return fetch(getUrl() + "?" + qs)
+  // Apps Script cold-starts often answer the first cross-origin call with a 302
+  // redirect / 404 / "Failed to fetch", then work fine once warm. Retry read
+  // requests (never writes, to avoid duplicate side effects) on those transient
+  // failures so the dashboard stops showing "Failed to fetch" in random areas.
+  // Real backend errors (data.error) and HTTP 4xx that aren't the redirect are
+  // not retried.
+  var MAX_ATTEMPTS = 3;
+  var RETRY_DELAY = [700, 1500];
+
+  function isTransientError(err) {
+    var msg = String((err && err.message) || err);
+    // Network / redirect / timeout symptoms worth an automatic retry:
+    return /Failed to fetch|NetworkError|HTTP 404|HTTP 408|HTTP 429|HTTP 5\d\d|timeout/i.test(msg);
+  }
+
+  function fetchRemote(params, isRead, attempt) {
+    attempt = attempt || 0;
+    return fetch(getUrl() + "?" + new URLSearchParams(params).toString())
       .then(function (res) {
         if (!res.ok) throw new Error("HTTP " + res.status);
         return res.json();
@@ -70,6 +85,14 @@ var API = (function () {
       .then(function (data) {
         if (data && data.error) throw new Error(data.error);
         return data;
+      })
+      .catch(function (err) {
+        if (isRead && attempt + 1 < MAX_ATTEMPTS && isTransientError(err)) {
+          var delay = RETRY_DELAY[Math.min(attempt, RETRY_DELAY.length - 1)];
+          return new Promise(function (r) { setTimeout(r, delay); })
+            .then(function () { return fetchRemote(params, isRead, attempt + 1); });
+        }
+        throw err;
       });
   }
 
@@ -88,7 +111,7 @@ var API = (function () {
           if (hit !== null) { resolve(hit); return; }
         }
       } catch (e) { /* caching is best-effort */ }
-      fetchRemote(params).then(function (data) {
+      fetchRemote(params, !!read).then(function (data) {
         if (read) {
           try { cachePut(params, data); } catch (e) {}
         }
