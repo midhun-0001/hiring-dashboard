@@ -15,10 +15,10 @@
     statusOptions: [],   // allowed Status values from the sheet's dropdown (data validation)
     interviewers: [],    // interviewer directory [{name, email}] for the tracker modal dropdown
     currentView: "dashboard",
-    currentRole: null,   // { title, status, department, ... }
+    currentRole: null,   // { title, status, assignedTo, ... }
     currentCandidate: null,
     currentIvSeg: "upcoming",
-    filters: { search: "", role: "", dept: "", status: "", priority: "" }
+    filters: { search: "", role: "", status: "", priority: "" }
   };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -81,12 +81,6 @@
     if (!m) return d;
     var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     return months[parseInt(m[2], 10) - 1] + " " + parseInt(m[3], 10) + ", " + m[1];
-  }
-
-  function deptForRole(title) {
-    var roles = (state.dashboard && state.dashboard.roles) || [];
-    for (var i = 0; i < roles.length; i++) if (roles[i].title === title) return roles[i].department;
-    return "";
   }
 
   function priorityLabel(p) {
@@ -408,7 +402,7 @@
     if (!roles || !roles.length) { el.innerHTML = '<div class="empty">No roles found in the Roles tab.</div>'; return; }
     var q = String(state.rolesSearch || "").trim().toLowerCase();
     var shown = q ? roles.filter(function (r) {
-      return String(r.title + " " + (r.department || "")).toLowerCase().indexOf(q) !== -1;
+      return String(r.title).toLowerCase().indexOf(q) !== -1;
     }) : roles;
     var count = $("roles-count");
     if (count) count.textContent = shown.length + " role" + (shown.length === 1 ? "" : "s");
@@ -421,7 +415,6 @@
       return '<div class="role-card" data-title="' + esc(r.title) + '">' +
         '<div class="role-card-head"><div>' +
           '<div class="role-card-title">' + esc(r.title) + '</div>' +
-          '<div class="dept">' + esc(r.department) + '</div>' +
         '</div><span class="badge ' + oc.cls + '">' + oc.label + '</span></div>' +
         '<div class="role-meta">' +
           '<span class="role-meta-tag"><strong>' + (r.applicantCount || 0) + '</strong> in process</span>' +
@@ -447,7 +440,6 @@
     $("rd-status").textContent = oc.label;
     $("rd-facts").innerHTML =
       '<span>Status: ' + oc.label + '</span>' +
-      '<span>Department: ' + esc(role.department) + '</span>' +
       '<span>In process: ' + (role.applicantCount || 0) + '</span>' +
       '<span>Assigned to: ' + esc(role.assignedTo || role.approvalStage) + '</span>';
     goView("role-detail");
@@ -541,16 +533,13 @@
   /* ---------------- global applicants ---------------- */
 
   function buildApplicantFilters() {
-    var roles = {}, depts = {}, statuses = {}, priorities = {};
+    var roles = {}, statuses = {}, priorities = {};
     state.allApplicants.forEach(function (a) {
       if (a.roleTitle) roles[a.roleTitle] = true;
-      var d = deptForRole(a.roleTitle);
-      if (d) depts[d] = true;
       if (a.status) statuses[a.status] = true;
       if (a.priority) priorities[a.priority] = true;
     });
     $("filter-role").innerHTML = '<option value="">All roles</option>' + sortKeys(roles).map(function (k) { return '<option value="' + esc(k) + '">' + esc(k) + '</option>'; }).join("");
-    $("filter-dept").innerHTML = '<option value="">All departments</option>' + sortKeys(depts).map(function (k) { return '<option value="' + esc(k) + '">' + esc(k) + '</option>'; }).join("");
     $("filter-status").innerHTML = '<option value="">All statuses</option>' + sortKeys(statuses).map(function (k) { return '<option value="' + esc(k) + '">' + esc(k) + '</option>'; }).join("");
     $("filter-priority").innerHTML = '<option value="">All priorities</option>' + sortKeys(priorities).map(function (k) { return '<option value="' + esc(k) + '">' + esc(k) + '</option>'; }).join("");
   }
@@ -565,7 +554,6 @@
         if (hay.indexOf(q) === -1) return false;
       }
       if (f.role && a.roleTitle !== f.role) return false;
-      if (f.dept) { var d = deptForRole(a.roleTitle); if (d !== f.dept) return false; }
       if (f.status && (a.status || "") !== f.status) return false;
       if (f.priority && (a.priority || "") !== f.priority) return false;
       return true;
@@ -1455,7 +1443,6 @@
 
   $("app-search").addEventListener("input", function (e) { state.filters.search = e.target.value; renderApplicants(); });
   $("filter-role").addEventListener("change", function (e) { state.filters.role = e.target.value; renderApplicants(); });
-  $("filter-dept").addEventListener("change", function (e) { state.filters.dept = e.target.value; renderApplicants(); });
   $("filter-status").addEventListener("change", function (e) { state.filters.status = e.target.value; renderApplicants(); });
   $("filter-priority").addEventListener("change", function (e) { state.filters.priority = e.target.value; renderApplicants(); });
 

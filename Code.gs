@@ -9,8 +9,7 @@
  *    matching to a Roles-tab title is fuzzy / case-insensitive.
  *
  * ROLES TAB COLUMNS
- *   A Role ID | B Role Title | C Department | D Status (Open/Closed)
- *   E Assigned to
+ *   A Role ID | B Role Title | C Status (Open/Closed) | D Assigned to
  *
  * APPLICANT TAB COLUMNS (single "Applicants" tab)
  *   A Applicant ID | B Full Name | C Email ID | D Phone Number
@@ -54,7 +53,7 @@ var SETTINGS = {
   // from the "Position Applied For" column (E) - Role column (index 16) may
   // exist but is ignored/no longer required. Matching is fuzzy/insensitive.
   APP_TAB_NAME: "Applicants",
-  ROLES_COLS: { id:0, title:1, department:2, status:3, assignedTo:4 },
+  ROLES_COLS: { id:0, title:1, status:2, assignedTo:3 },
   APP_COLS: {
     applicantId:0, name:1, email:2, phone:3, position:4, resume:5,
     experience:6, ctc:7, priority:8, status:9,
@@ -166,7 +165,6 @@ function readRoles_() {
     out.push({
       id: norm_(r[C.id]),
       title: title,
-      department: norm_(r[C.department]),
       status: norm_(r[C.status]).toLowerCase() === "closed" ? "closed" : "open",
       assignedTo: owner,
       // kept for older clients that still read approvalStage

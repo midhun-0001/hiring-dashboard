@@ -28,15 +28,15 @@ data** and **no hard-coded** roles.
 
 ### `Roles` tab
 
-| A | B | C | D | E |
-|---|---|---|---|---|
-| Role ID | Role Title | Department | Status | Assigned to |
-| R001 | Satellite Systems Engineer | Engineering | Open | Palaniappan |
-| R002 | Mechanical Engineering Lead | Engineering | Open | Akshanth |
+| A | B | C | D |
+|---|---|---|---|
+| Role ID | Role Title | Status | Assigned to |
+| R001 | Satellite Systems Engineer | Open | Palaniappan |
+| R002 | Mechanical Engineering Lead | Open | Akshanth |
 
-- `D Status` = `Open` or `Closed` → drives the Open/Closed card color and counts.
+- `C Status` = `Open` or `Closed` → drives the Open/Closed card color and counts.
 - `B Role Title` = matched against each applicant's `Position Applied For`.
-- `E Assigned to` shows on the role card and in the role-detail header.
+- `D Assigned to` shows on the role card and in the role-detail header.
 
 ### No sign-in / permissions
 
