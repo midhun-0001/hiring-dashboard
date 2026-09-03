@@ -1074,7 +1074,7 @@ function driveFolderOrThrow_() {
 }
 
 // Google Drive folder where uploaded resumes are stored.
-var RESUME_FOLDER_ID = "1xrPtE6snrfT2-7V0avicsnmfEZV7WYha";
+var RESUME_FOLDER_ID = "16LUbWGPRZAHldrSAemMzoNY6ykaSjg-n";
 
 // Resolve the fixed resume Drive folder (shared among the app's use cases).
 function resumeFolder_() {
