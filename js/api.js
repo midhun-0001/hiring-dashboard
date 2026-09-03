@@ -30,9 +30,13 @@ var API = (function () {
   // Writes always go to the server and clear the cache.
   var CACHE_TTL = 24000; // 24s (shorter than the 45s auto-refresh so data stays fresh)
   var cache = {};
+  // `tracker`, `interviewers` and `resumefolder` were missing here, so `call()`
+  // classified them as writes: every visit to the Interviews tab wiped the whole
+  // client cache and forced the dashboard + applicants to refetch.
   var CACHE_ACTIONS = {
     dashboard: true, roles: true, roleapplicants: true,
-    applicants: true, interviews: true, calendar: true, candidate: true
+    applicants: true, interviews: true, calendar: true, candidate: true,
+    tracker: true, interviewers: true, resumefolder: true
   };
 
   function cacheKey(params) {
@@ -144,32 +148,81 @@ var API = (function () {
     trackerCancel: function (id) {
       return call({ action: "trackercancel", id: id });
     },
+    // Outcome of a finished interview: Result (column N) + Note (column K).
+    trackerResult: function (id, fields) {
+      var p = { action: "trackerresult", id: id };
+      if (fields.result !== undefined) p.result = fields.result;
+      if (fields.note !== undefined) p.note = fields.note;
+      return call(p);
+    },
     interviewers: function () { return call({ action: "interviewers" }); },
     interviewerAdd: function (name, email) {
       return call({ action: "intervieweradd", name: name, email: email });
     },
+    resumeFolder: function () { return call({ action: "resumefolder" }); },
     calendarCreate: function (f) { return this.trackerCreate(f); },
     calendarUpdate: function (id, f) { return this.trackerUpdate(id, f); },
     calendarCancel: function (id) { return this.trackerCancel(id); },
+    /* Upload a resume to Drive.
+       Apps Script CANNOT read a file out of a multipart/form-data body: with
+       FormData every text field arrives in e.parameter but the file does not,
+       so doPost always answered {"error":"no file received"}. The bytes now go
+       as web-safe base64 in a form-urlencoded field instead. web-safe matters:
+       its alphabet (A-Za-z0-9-_) survives URL encoding unexpanded, where
+       standard base64's "+", "/" and "=" would each inflate to 3 characters. */
+    MAX_RESUME_BYTES: 8 * 1024 * 1024,
     uploadResume: function (file, opts) {
+      var self = this;
       return new Promise(function (resolve, reject) {
         if (!isConfigured()) {
           reject(new Error("Not configured: set your Apps Script Web App URL."));
           return;
         }
-        var fd = new FormData();
-        fd.append("action", "uploadresume");
-        fd.append("file", file, file.name || "resume.pdf");
-        if (opts && opts.candidate) fd.append("candidate", opts.candidate);
-        if (opts && opts.id) fd.append("id", opts.id);
-        fetch(getUrl(), { method: "POST", body: fd })
-          .then(function (res) { return res.json(); })
-          .then(function (data) {
+        if (!file) { reject(new Error("No file selected.")); return; }
+        if (file.size > self.MAX_RESUME_BYTES) {
+          reject(new Error("That file is " + (file.size / 1048576).toFixed(1) +
+            " MB. The limit is " + (self.MAX_RESUME_BYTES / 1048576) + " MB."));
+          return;
+        }
+
+        var reader = new FileReader();
+        reader.onerror = function () { reject(new Error("Could not read that file.")); };
+        reader.onload = function () {
+          var raw = String(reader.result || "");
+          var comma = raw.indexOf(",");                    // strip "data:...;base64,"
+          var b64 = comma >= 0 ? raw.slice(comma + 1) : raw;
+          if (!b64) { reject(new Error("That file appears to be empty.")); return; }
+          var webSafe = b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+          var body = new URLSearchParams();
+          body.set("action", "uploadresume");
+          body.set("filename", file.name || "resume.pdf");
+          body.set("mimeType", file.type || "application/octet-stream");
+          body.set("dataWebSafe", webSafe);
+          if (opts && opts.candidate) body.set("candidate", opts.candidate);
+          if (opts && opts.id) body.set("id", opts.id);
+
+          // urlencoded is a CORS-safelisted content type, so no preflight -
+          // which Apps Script would not answer anyway.
+          fetch(getUrl(), {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+            body: body.toString()
+          }).then(function (res) {
+            return res.text().then(function (t) {
+              try { return JSON.parse(t); } catch (e) {
+                throw new Error("Unexpected reply from Apps Script (HTTP " + res.status +
+                  "). Re-deploy Code.gs as a new version and set access to \"Anyone\".");
+              }
+            });
+          }).then(function (data) {
             if (data && data.error) throw new Error(data.error);
+            if (!data || !data.url) throw new Error("Upload finished but no Drive link came back.");
             cacheClear();
             resolve(data);
-          })
-          .catch(reject);
+          }).catch(reject);
+        };
+        reader.readAsDataURL(file);
       });
     }
   };

@@ -64,15 +64,41 @@ dashboard by anyone with the link).
 
 ### `Interview Events` tab (created automatically)
 
-The interview **tracker** stores a 13-column record
-(`Event ID | Candidate | Role | Date | Time | Duration | Interviewer
-Name | Interviewer Email | Meet Link | Status | Notes | Participants | Candidate Email`)
-to a tab named
-**`Interview Events`**, created on first use. It is tracker-only: no Google
-Calendar events are created. Any record whose scheduled date+time has passed is
-automatically classified as **past/completed** by the backend. Do not point
-`SETTINGS.INTERVIEWS_TAB_NAME` at a tab that already holds applicant data —
-`saveInterviewRow_` overwrites whole rows.
+The interview **tracker** stores a 14-column record in a tab named
+**`Interview Events`**, created on first use:
+
+| A | B | C | D | E | F | G |
+|---|---|---|---|---|---|---|
+| Event ID | Candidate | Role | Date | Time | Duration (min) | Interviewer Name |
+
+| H | I | J | K | L | M | N |
+|---|---|---|---|---|---|---|
+| Interviewer Email | Meet Link | Status | Notes | Participants | Candidate Email | Result |
+
+It is tracker-only: no Google Calendar events are created.
+
+**Upcoming vs Completed is derived, never stored.** `interviewPhase_` compares
+`Date + Time + Duration` against the clock on every read, so a record moves to
+**Completed** by itself the moment its slot ends — no manual status, no reload.
+The `J Status` column only ever holds `active` / `cancelled` (cancelled rows are
+hidden from both lists). A record with a date but no time is treated as running
+to the end of that day, so it flips at midnight rather than at 00:00 that
+morning. A record with no date at all stays in Upcoming so it can't get lost.
+
+`D Date` and `E Time` are stored as **plain text** (`YYYY-MM-DD` and `HH:MM`)
+and the columns are formatted as text on creation. This matters: if Sheets is
+allowed to coerce them into real date values, reads come back as
+`Wed Sep 10 2026 00:00:00 GMT+0530…` and every date comparison breaks. Reads go
+through `isoDate_` / `isoTime_`, which recover either form.
+
+**Result + Note** are the outcome of a finished interview, edited inline in the
+Completed list and written by `?action=trackerresult&id=…&result=…&note=…`.
+`Result` (column N) accepts `Selected`, `Rejected`, `On hold`, `No show`;
+`Note` is free text stored in `K Notes`. Choosing `Rejected` also sets that
+candidate's `Status` to `Rejected` on the `Applicants` tab.
+
+Do not point `SETTINGS.INTERVIEWS_TAB_NAME` at a tab that already holds
+applicant data — `saveInterviewRow_` overwrites whole rows.
 
 ### `Interviewers` tab (created automatically)
 
@@ -120,6 +146,46 @@ count toward total applicants / interviews.
 5. **Important:** each time you change `Code.gs`, publish a **new version**
    (Deploy → Manage deployments → Edit → New version → Deploy), otherwise the
    old code keeps serving.
+
+### Granting Drive access (required for resume upload)
+
+Resume upload writes to Google Drive, which needs the **Drive OAuth scope** on
+the deployment. A Web App that was first authorised *before* the Drive code
+existed keeps its older, narrower token, and every upload fails with:
+
+```
+You do not have permission to call DriveApp.getFoldersByName.
+Required permissions: .../auth/drive.readonly || .../auth/drive
+```
+
+To fix it:
+
+1. In the Apps Script editor: **Project Settings** → tick
+   *Show "appsscript.json" manifest file in editor*.
+2. Replace the manifest with the [`appsscript.json`](appsscript.json) in this
+   repo — it declares `.../auth/spreadsheets` and `.../auth/drive` explicitly,
+   so the consent screen always asks for Drive.
+3. Pick any function (e.g. `getResumeFolderLink_`) and **Run** it once. Accept
+   the Google permission prompt, including Drive.
+4. **Deploy → Manage deployments → Edit → New version → Deploy.**
+
+Verify with `<your /exec URL>?action=resumefolder` — it should return
+`{"ok":true,"name":"Vyomic Resumes","url":"..."}` rather than a permission
+error.
+
+### How the file actually gets there
+
+Apps Script **cannot read a file out of a `multipart/form-data` body.** With a
+`FormData` POST the text fields do arrive in `e.parameter`, but the file never
+does, so `doPost` answers `{"error":"no file received"}`. The client therefore
+base64-encodes the bytes and posts them as a normal
+`application/x-www-form-urlencoded` field (`dataWebSafe`), which Apps Script
+parses into `e.parameter` like any other param, and `uploadBlob_` turns back
+into a Blob. The encoding is **web-safe** base64 (`-` and `_` instead of `+`
+and `/`, no padding) because those characters pass through URL encoding
+unexpanded — standard base64 would inflate the payload by ~7%.
+
+Uploads are capped client-side at **8 MB** (`API.MAX_RESUME_BYTES`).
 
 ## Running the dashboard
 
@@ -202,6 +268,8 @@ to free static hosting (Netlify / Vercel / GitHub Pages) and share that URL.
 
 | Action | Params | Returns |
 |---|---|---|
+| `tracker` | — | `{ events, upcoming, past, now, results }` — split by date, not by stored status |
+| `trackerresult` | `id`, `result`, `note` | Writes Result (col N) + Note (col K) for one record |
 | `dashboard` | — | `{ stats, roles, statusOptions, upcomingInterviews, interviews:{upcoming,pending,completed} }` |
 | `roles` | — | Role list with live `applicantCount` |
 | `roleapplicants` | `role` | Applicants for one role's tab |
@@ -215,6 +283,7 @@ to free static hosting (Netlify / Vercel / GitHub Pages) and share that URL.
 | `trackercancel` | `id` | Marks a tracker record cancelled (removed from lists) |
 | `interviewers` | — | `{ interviewers:[{name,email}] }` from the `Interviewers` tab (lists the modal's Interviewer dropdown) |
 | `intervieweradd` | `name`, `email` | Adds/updates an interviewer in the `Interviewers` tab; returns `{ interviewer, interviewers }` |
+| `resumefolder` | — | Returns the Drive folder (`Vyomic Resumes`) where uploaded resumes are stored, shared anyone-with-link: `{ name, url }` |
 | `update` | `id`, `field`, `value` | Writes one field back (no permission check) |
 | `addapplicant` | `role`, `name`, `email`, … | Appends a new applicant row to the role's tab |
 | `deletecandidate` | `id` | Deletes the applicant's row from its tab |

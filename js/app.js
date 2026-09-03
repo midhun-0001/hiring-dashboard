@@ -98,6 +98,17 @@
     return months[parseInt(m[2], 10) - 1] + " " + parseInt(m[3], 10) + ", " + m[1];
   }
 
+  // Compact date for the "when" column: "Sep 3" (omits the year in the current
+  // year) so it stays short and readable, e.g. "Sep 3 · 11:30 AM".
+  function shortDate_(d) {
+    if (!d) return "";
+    var m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return d;
+    var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    var curYear = String(new Date().getFullYear());
+    return months[parseInt(m[2], 10) - 1] + " " + parseInt(m[3], 10) + (m[1] === curYear ? "" : ", " + m[1]);
+  }
+
   function priorityLabel(p) {
     var s = String(p || "").trim();
     return s || "—";
@@ -305,7 +316,26 @@
     else hideLoading(); // nothing to load yet -> show the connect banner
   }
 
-  function openConfigModal() { $("config-input").value = API.getUrl(); $("config-modal").classList.remove("hidden"); }
+  function openConfigModal() {
+    $("config-input").value = API.getUrl();
+    $("config-modal").classList.remove("hidden");
+    // Show where uploaded resumes go (Drive folder link), when available.
+    var holder = $("config-resume-folder");
+    if (holder) {
+      holder.innerHTML = '<span class="config-resume-folder-status">Loading…</span>';
+      API.resumeFolder().then(function (d) {
+        if (!holder) return;
+        if (d && d.url) {
+          holder.innerHTML = '<a class="link" href="' + esc(d.url) + '" target="_blank" rel="noopener">' + esc(d.name || "Vyomic Resumes") + ' — open in Drive</a>';
+        } else {
+          holder.innerHTML = '<span class="config-resume-folder-status">No folder link returned.</span>';
+        }
+      }).catch(function () {
+        if (!holder) return;
+        holder.innerHTML = '<span class="config-resume-folder-status">Unavailable — ensure Code.gs is re-deployed.</span>';
+      });
+    }
+  }
   function closeModals() {
     ["config-modal", "edit-modal", "add-modal", "calendar-modal"].forEach(function (id) {
       modalIdle(id); // never leave a veil / disabled form behind for the next open
@@ -694,14 +724,6 @@
   // Real team members shown in the interviewer dropdown (Participant 2).
   var TEAM_INTERVIEWERS = ["Lokesh", "Palaniappan", "Anurag", "akshaansh"];
 
-  // Statuses available in the tracker modal. "active" and "completed" are the
-  // stored values; the backend also auto-moves past records to the completed
-  // area regardless of this manual status.
-  var TRACKER_STATUSES = [
-    { val: "active", label: "Scheduled" },
-    { val: "completed", label: "Completed" }
-  ];
-
   // Build the interviewer <option> list for the tracker modal. Options come from
   // the interviewer directory (persisted in the sheet) plus an "Add new
   // interviewer…" entry. Falls back to the seeded team list if the directory
@@ -1082,12 +1104,91 @@
     });
   }
 
-  // Live counts in the segmented control so both buckets are visible at a glance.
-  function updateIvCounts() {
+  /* ---------------- upcoming vs completed ----------------
+     The interview's own Date (+ Time + Duration) decides which list it is in.
+     Nothing is stored. The same rule runs in Code.gs (interviewPhase_) for the
+     API payload and here for the rendered list, so a record crosses over on its
+     own the moment its slot ends — no reload, no manual status. */
+
+  var IV_RESULTS_FALLBACK = ["Selected", "Rejected", "On hold", "No show"];
+
+  function ivNowStamp() {
+    var n = new Date();
+    return n.getFullYear() + "-" + pad2(n.getMonth() + 1) + "-" + pad2(n.getDate()) +
+      " " + pad2(n.getHours()) + ":" + pad2(n.getMinutes());
+  }
+  function pad2(n) { return ("0" + n).slice(-2); }
+
+  // The moment the interview is over. No time set -> end of that day, so an
+  // undated-time record flips at midnight instead of 00:00 the same morning.
+  function ivEndsAt(rec) {
+    var d = String(rec && rec.date || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!d) return "";
+    var t = String(rec.time || "").match(/^(\d{1,2}):(\d{2})/);
+    var mins = t ? (parseInt(rec.duration, 10) || 0) : 0;
+    var h = t ? +t[1] : 23, mi = t ? +t[2] : 59;
+    var end = new Date(+d[1], +d[2] - 1, +d[3], h, mi);
+    end = new Date(end.getTime() + mins * 60000);
+    return end.getFullYear() + "-" + pad2(end.getMonth() + 1) + "-" + pad2(end.getDate()) +
+      " " + pad2(end.getHours()) + ":" + pad2(end.getMinutes());
+  }
+
+  function ivPhase(rec, nowS) {
+    if (!rec) return "upcoming";
+    if (rec.status === "cancelled") return "cancelled";
+    var end = ivEndsAt(rec);
+    if (!end) return "upcoming";  // undated -> stay visible rather than vanish
+    return end <= (nowS || ivNowStamp()) ? "completed" : "upcoming";
+  }
+
+  // Derive both lists from the full record set rather than trusting the
+  // server-side split, so the boundary is re-evaluated on every render.
+  function splitInterviews() {
     var cal = state.calendar || {};
+    var all = cal.events || [];
+    if (!all.length && (cal.upcoming || cal.past)) {
+      all = (cal.upcoming || []).concat(cal.past || []);
+    }
+    var nowS = ivNowStamp();
+    var upcoming = [], past = [];
+    all.forEach(function (rec) {
+      var phase = ivPhase(rec, nowS);
+      if (phase === "cancelled") return;
+      (phase === "completed" ? past : upcoming).push(rec);
+    });
+    var key = function (x) { return (x.date || "9999-99-99") + " " + (x.time || "99:99"); };
+    upcoming.sort(function (a, b) { return key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0; });
+    past.sort(function (a, b) { return key(b) < key(a) ? -1 : key(b) > key(a) ? 1 : 0; });
+    return { upcoming: upcoming, past: past };
+  }
+
+  function ivResultOptions() {
+    var list = (state.calendar && state.calendar.results) || IV_RESULTS_FALLBACK;
+    return list.length ? list : IV_RESULTS_FALLBACK;
+  }
+
+  // Live counts in the segmented control so both buckets are visible at a glance.
+  function updateIvCounts(split) {
+    var s = split || splitInterviews();
     var up = $("iv-count-upcoming"), done = $("iv-count-completed");
-    if (up) up.textContent = String((cal.upcoming || []).length);
-    if (done) done.textContent = String((cal.past || []).length);
+    if (up) up.textContent = String(s.upcoming.length);
+    if (done) done.textContent = String(s.past.length);
+  }
+
+  /* Re-check the boundary while the tab is open so an interview moves to
+     Completed in real time. Only re-renders when the split actually changes. */
+  var ivTicker = null, ivLastSignature = "";
+  function startIvTicker() {
+    if (ivTicker) return;
+    ivTicker = setInterval(function () {
+      if (state.currentView !== "interviews" || !state.calendar) return;
+      var s = splitInterviews();
+      var sig = s.upcoming.length + "/" + s.past.length;
+      if (sig === ivLastSignature) return;
+      ivLastSignature = sig;
+      renderInterviewsPage();
+      toast("An interview just moved to Completed");
+    }, 30000);
   }
 
   // Day-accurate difference between an ISO date and today, for the "in 3 days"
@@ -1111,12 +1212,19 @@
     return Math.abs(d) + " days ago";
   }
 
-  // Badge reflects the record's own date rather than which tab you're looking at.
+  // Badge reflects the record's own date/time, not which tab you're looking at.
   function ivStatusBadge(rec) {
     var d = daysFromToday(rec.date);
     if (d === null) return { cls: "badge-gray", label: "No date" };
-    if (d < 0) return { cls: "badge-green", label: "Completed" };
-    if (d === 0) return { cls: "badge-amber", label: "Today" };
+    if (ivPhase(rec) === "completed") return { cls: "badge-green", label: "Completed" };
+    if (d === 0) {
+      // today and not finished: either running right now or still to start
+      var startedAt = String(rec.date || "") + " " + String(rec.time || "00:00");
+      var running = rec.time && startedAt <= ivNowStamp();
+      return running
+        ? { cls: "badge-amber", label: "In progress" }
+        : { cls: "badge-amber", label: "Today" };
+    }
     if (d === 1) return { cls: "badge-blue", label: "Tomorrow" };
     return { cls: "badge-blue", label: "Scheduled" };
   }
@@ -1132,14 +1240,17 @@
     var el = $("interviews-body");
     if (!state.calendar) { skeletonTable(el, IV_HEADERS, 5); loadInterviews(); return; }
 
-    var cal = state.calendar;
     var seg = state.currentIvSeg;
-    var list = seg === "completed" ? (cal.past || []) : (cal.upcoming || cal.events || []);
-    updateIvCounts();
+    // Split is derived here (not read from the payload) so the date boundary is
+    // re-evaluated on every render and the ticker can move rows across live.
+    var split = splitInterviews();
+    var list = seg === "completed" ? split.past : split.upcoming;
+    updateIvCounts(split);
+    ivLastSignature = split.upcoming.length + "/" + split.past.length;
+    startIvTicker();
 
-    // The completed-list Decision dropdown maps back to an applicant, so it needs
-    // the applicant directory. Guarded by a flag: without it, an empty applicant
-    // list re-triggered the fetch on every re-render, forever.
+    // The Result column mirrors a rejection back to the applicant row, so it
+    // needs the applicant directory. Latched against a render/fetch loop.
     if (seg === "completed") loadApplicantsForDecisions();
 
     if (!list.length) {
@@ -1147,7 +1258,7 @@
         showEmpty(el, {
           icon: "check",
           title: "No completed interviews yet",
-          hint: "Once an interview's date has passed it moves here automatically, where you can record the outcome."
+          hint: "An interview moves here by itself once its date and time have passed. You can then record the result and a note."
         });
       } else {
         showEmpty(el, {
@@ -1162,7 +1273,8 @@
       return;
     }
 
-    var showDecision = seg === "completed";
+    var showOutcome = seg === "completed";
+    var resultOpts = ivResultOptions();
 
     var rows = list.map(function (i) {
       var b = ivStatusBadge(i);
@@ -1170,10 +1282,10 @@
       var rel = relativeDay(i.date);
       var isToday = daysFromToday(i.date) === 0;
 
+      var shortDate = shortDate_(i.date);
       var when = '<div class="iv-when">' +
-        '<span class="iv-when-date">' + (i.date ? esc(fmtDate(i.date)) : "—") +
-          (i.time ? ' · ' + esc(fmtTime(i.time)) : '') + '</span>' +
-        (rel ? '<span class="iv-when-rel">' + esc(rel) + '</span>' : '') +
+        '<span class="iv-when-main">' + esc(rel || shortDate || "—") + '</span>' +
+        (shortDate ? '<span class="iv-when-sub">' + esc(shortDate) + (i.time ? ' · ' + esc(fmtTime(i.time)) : '') + '</span>' : '') +
       '</div>';
 
       var person = i.interviewer
@@ -1181,18 +1293,22 @@
           '<span>' + esc(i.interviewer) + '</span></div>'
         : '<span class="iv-unassigned">Unassigned</span>';
 
-      var decideCell = "";
-      if (showDecision) {
-        // Only "Rejected" has a side effect: it writes Status=Rejected back to the
-        // applicant row. Rendered disabled when no applicant matches the name.
-        var matched = findApplicant(i.candidate, role);
-        var sel = (matched && isRejected(matched.status)) ? ' selected' : '';
-        decideCell = '<td><select class="input iv-decision"' +
-          (matched ? '' : ' disabled title="No applicant matches this name"') +
-          ' data-cand="' + esc(i.candidate) + '" data-role="' + esc(role) + '">' +
-          '<option value="">Record outcome…</option>' +
-          '<option value="Rejected"' + sel + '>Rejected</option>' +
-          '</select></td>';
+      // Completed rows carry the outcome: Result (sheet column N) and Note
+      // (column K). Both are written straight to the Interview Events row.
+      var outcomeCells = "";
+      if (showOutcome) {
+        var cur = String(i.result || "");
+        var opts = '<option value="">Not recorded</option>' + resultOpts.map(function (r) {
+          return '<option value="' + esc(r) + '"' +
+            (r.toLowerCase() === cur.toLowerCase() ? ' selected' : '') + '>' + esc(r) + '</option>';
+        }).join("");
+        outcomeCells =
+          '<td><select class="input iv-result' + (cur ? ' has-value' : '') + '"' +
+            ' data-evt="' + esc(i.eventId) + '"' +
+            ' data-cand="' + esc(i.candidate) + '" data-role="' + esc(role) + '">' + opts + '</select></td>' +
+          '<td><input class="input iv-note" type="text" placeholder="Add a note…"' +
+            ' data-evt="' + esc(i.eventId) + '"' +
+            ' value="' + esc(i.notes || "") + '" /></td>';
       }
 
       var action = i.eventId
@@ -1206,13 +1322,13 @@
         '<td>' + person + '</td>' +
         '<td>' + (i.duration ? esc(i.duration) + " min" : '<span class="cell-sub">—</span>') + '</td>' +
         '<td><span class="badge ' + b.cls + '">' + esc(b.label) + '</span></td>' +
-        decideCell +
+        outcomeCells +
         '<td>' + action + '</td>' +
       '</tr>';
     }).join("");
 
     var head = IV_HEADERS.map(function (h) { return '<th>' + h + '</th>'; }).join("") +
-      (showDecision ? '<th>Decision</th>' : '') + '<th></th>';
+      (showOutcome ? '<th>Result</th><th>Note</th>' : '') + '<th></th>';
 
     el.innerHTML = '<table class="table"><thead><tr>' + head +
       '</tr></thead><tbody>' + rows + '</tbody></table>';
@@ -1221,11 +1337,73 @@
       b.addEventListener("click", function (e) { e.stopPropagation(); openCalendarModal(b.dataset.editEvt); });
     });
 
-    el.querySelectorAll(".iv-decision").forEach(function (sel) {
+    el.querySelectorAll(".iv-result").forEach(function (sel) {
       sel.addEventListener("click", function (e) { e.stopPropagation(); });
-      sel.addEventListener("change", function () {
-        if (sel.value === "Rejected") decideRejected(sel.dataset.cand, sel.dataset.role, sel);
+      sel.addEventListener("change", function () { saveIvResult(sel); });
+    });
+
+    el.querySelectorAll(".iv-note").forEach(function (inp) {
+      inp.addEventListener("click", function (e) { e.stopPropagation(); });
+      inp.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); inp.blur(); }
       });
+      inp.addEventListener("change", function () { saveIvNote(inp); });
+    });
+  }
+
+  // Find the tracker record behind an inline control, so a save can update the
+  // in-memory copy and survive the next re-render.
+  function findIvRecord(eventId) {
+    var all = (state.calendar && state.calendar.events) || [];
+    for (var i = 0; i < all.length; i++) if (all[i].eventId === eventId) return all[i];
+    return null;
+  }
+
+  function saveIvResult(sel) {
+    var id = sel.dataset.evt;
+    var rec = findIvRecord(id);
+    var value = sel.value;
+    var prev = rec ? (rec.result || "") : "";
+    sel.disabled = true;
+    API.trackerResult(id, { result: value }).then(function () {
+      sel.disabled = false;
+      sel.classList.toggle("has-value", !!value);
+      if (rec) rec.result = value;
+      toast(value ? 'Result saved: ' + value : "Result cleared");
+      // A rejection also belongs on the applicant row, as before.
+      if (value.toLowerCase() === "rejected") {
+        var a = findApplicant(sel.dataset.cand, sel.dataset.role);
+        if (a && !isRejected(a.status)) {
+          API.update(a.id, "status", "Rejected").then(function () {
+            a.status = "Rejected";
+            toast('"' + a.name + '" also marked Rejected in Applicants');
+            API.refresh(); loadDashboard();
+            if (state.allApplicants.length) loadAllApplicants();
+          }).catch(showError);
+        }
+      }
+    }).catch(function (err) {
+      sel.disabled = false;
+      sel.value = prev; // put the control back to the stored value
+      showError(err);
+    });
+  }
+
+  function saveIvNote(inp) {
+    var id = inp.dataset.evt;
+    var rec = findIvRecord(id);
+    var value = inp.value.trim();
+    if (rec && (rec.notes || "") === value) return; // nothing changed
+    var prev = rec ? (rec.notes || "") : "";
+    inp.disabled = true;
+    API.trackerResult(id, { note: value }).then(function () {
+      inp.disabled = false;
+      if (rec) rec.notes = value;
+      toast("Note saved");
+    }).catch(function (err) {
+      inp.disabled = false;
+      inp.value = prev;
+      showError(err);
     });
   }
 
@@ -1258,28 +1436,6 @@
       if (data.statusOptions && data.statusOptions.length) state.statusOptions = data.statusOptions;
       if (state.currentView === "interviews" && state.currentIvSeg === "completed") renderInterviewsPage();
     }).catch(function (err) { decisionsFetched = false; showError(err); });
-  }
-
-  function decideRejected(name, role, sel) {
-    var a = findApplicant(name, role);
-    if (!a) {
-      toast("No matching candidate found to reject");
-      sel.value = "";
-      return;
-    }
-    sel.disabled = true;
-    API.update(a.id, "status", "Rejected").then(function () {
-      sel.disabled = false;
-      sel.value = "Rejected";
-      toast('"' + a.name + '" marked as Rejected');
-      loadDashboard();
-      if (state.allApplicants.length) loadAllApplicants();
-      if (state.currentView === "interviews") renderInterviewsPage();
-    }).catch(function (err) {
-      sel.disabled = false;
-      sel.value = "";
-      showError(err);
-    });
   }
 
   /* ---------------- interview tracker modal ---------------- */
@@ -1317,7 +1473,8 @@
       duration: $("cal-duration").value,
       interviewer: ivName,
       interviewerEmail: ivEmail,
-      status: $("cal-status").value,
+      // no `status` here: upcoming vs completed is derived from the date, and
+      // the sheet's Status column only ever holds active/cancelled
       notes: $("cal-notes").value.trim()
     };
     if (calEditingId) {
@@ -1350,12 +1507,12 @@
 
     var ev = id ? findCalEvent(id) : null;
     var candidate = "", candEmail = "", role = "", date = "", time = "", duration = "60",
-        interviewer = "", email = "", status = "active", notes = "";
+        interviewer = "", email = "", notes = "";
     if (ev) {
       candidate = ev.candidate; candEmail = ev.candidateEmail || ""; role = ev.role || "";
       date = ev.date || ""; time = ev.time || ""; duration = ev.duration || "60";
       interviewer = ev.interviewer || ""; email = ev.interviewerEmail || "";
-      status = ev.status && ev.status !== "cancelled" ? ev.status : "active"; notes = ev.notes || "";
+      notes = ev.notes || "";
     }
     if (optCandidate) {
       candidate = candidate || optCandidate.name || "";
@@ -1367,7 +1524,26 @@
     $("cal-candidate").readOnly = !!ev;
     $("cal-candidate").placeholder = candidate ? "" : "Candidate full name";
     $("cal-candidate-email").value = candEmail;
-    if (role) sel.value = role;
+    if (role) {
+      // Prefer an exact role match, but fall back to case-insensitive / substring
+      // matches so the candidate's role is still selected even when its text
+      // differs slightly from the Roles-tab title.
+      var opts = sel.options, pick = null, px;
+      for (px = 0; px < opts.length; px++) {
+        var v = String(opts[px].value).trim();
+        if (!v) continue;
+        if (v === role) { pick = opts[px]; break; }
+        if (!pick && v.toLowerCase() === role.toLowerCase()) pick = opts[px];
+      }
+      if (!pick) {
+        var rl = role.toLowerCase();
+        for (px = 0; px < opts.length; px++) {
+          var vv = String(opts[px].value).trim().toLowerCase();
+          if (vv && (vv.indexOf(rl) !== -1 || rl.indexOf(vv) !== -1)) { pick = opts[px]; break; }
+        }
+      }
+      if (pick) { sel.value = pick.value; role = pick.value; }
+    }
     $("cal-date").value = date;
     $("cal-time").value = time;
     $("cal-duration").value = duration;
@@ -1379,12 +1555,38 @@
     applyInterviewer(interviewer, email);
     loadInterviewers(function () { applyInterviewer(interviewer, email); });
 
-    $("cal-status").innerHTML = TRACKER_STATUSES.map(function (o) {
-      return '<option value="' + esc(o.val) + '"' + (o.val === status ? " selected" : "") + '>' + esc(o.label) + '</option>';
-    }).join("");
     $("cal-notes").value = notes;
 
+    // Live hint under the date: which list this record will land in.
+    updateCalPhaseHint();
+
     $("calendar-modal").classList.remove("hidden");
+  }
+
+  /* Tells you, before saving, which list the record will land in — the same
+     date rule the list uses, so the behaviour isn't a surprise. */
+  function updateCalPhaseHint() {
+    var holder = $("cal-phase-hint");
+    if (!holder) return;
+    var date = $("cal-date").value;
+    if (!date) {
+      holder.innerHTML = '<span class="badge badge-gray">Set a date</span>' +
+        '<span class="cal-phase-note">The date decides Upcoming vs Completed.</span>';
+      return;
+    }
+    var rec = {
+      date: date,
+      time: $("cal-time").value,
+      duration: parseInt($("cal-duration").value, 10) || 0
+    };
+    var done = ivPhase(rec) === "completed";
+    holder.innerHTML = done
+      ? '<span class="badge badge-green">Completed</span>' +
+        '<span class="cal-phase-note">This slot has already passed, so it lands in Completed.</span>'
+      : '<span class="badge badge-blue">Upcoming</span>' +
+        '<span class="cal-phase-note">Moves to Completed on its own at ' +
+          esc(fmtTime(ivEndsAt(rec).slice(11)) || "end of day") + ' on ' +
+          esc(fmtDate(ivEndsAt(rec).slice(0, 10))) + '.</span>';
   }
 
   function removeInterview() {
@@ -1574,6 +1776,13 @@
   $("cal-close-btn").addEventListener("click", closeModals);
   $("cal-cancel").addEventListener("click", removeInterview);
   $("cal-form").addEventListener("submit", function (e) { e.preventDefault(); trackerSubmit(); });
+  // keep the "goes to" hint in step with the date/time/duration inputs
+  ["cal-date", "cal-time", "cal-duration"].forEach(function (id) {
+    var el = $(id);
+    if (el) ["change", "input"].forEach(function (ev) {
+      el.addEventListener(ev, updateCalPhaseHint);
+    });
+  });
   $("cal-interviewer-select").addEventListener("change", function () {
     var v = this.value;
     var nameField = $("cal-interviewer");

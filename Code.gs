@@ -34,6 +34,7 @@
  *   ?action=calendar                  -> scheduled interviews (upcoming / past)
  *   ?action=tracker                   -> interview tracker (upcoming / past, alias of calendar)
  *   ?action=trackercreate/update/cancel -> add/edit/remove a tracker record
+ *   ?action=trackerresult&id=..&result=..&note=.. -> outcome of a finished interview
  *   ?action=addapplicant              -> append a new applicant row
  *   ?action=deletecandidate           -> delete an applicant row
  *
@@ -43,9 +44,13 @@
  */
 
 // NOTE: this project is tracker-only — interview records are stored in the
-// Interview Events sheet and no real Google Calendar events are created. The
-// auto-completion logic in the tracker/calendar list action moves any record
-// whose scheduled date+time has passed into the "past"/completed area.
+// Interview Events sheet and no real Google Calendar events are created.
+//
+// UPCOMING vs COMPLETED IS DERIVED, NEVER STORED. interviewPhase_ compares
+// date + time + duration against the clock on every read, so a record moves to
+// Completed by itself the moment its slot ends. The Status column only ever
+// holds active/cancelled. Result + Note (columns N and K) are written by the
+// Completed list via ?action=trackerresult.
 
 var SETTINGS = {
   ROLES_TAB_NAME: "Roles",
@@ -69,11 +74,17 @@ var SETTINGS = {
   // Events tab: A Event ID | B Candidate | C Role | D Date | E Time
   //             F Duration (min) | G Interviewer Name | H Interviewer Email
   //             I Meet Link | J Status (active/cancelled) | K Notes
-  //             L Participants | M Candidate Email
+  //             L Participants | M Candidate Email | N Result
+  // Upcoming vs completed is NOT stored - it is derived from Date+Time+Duration
+  // against the current clock (see interviewPhase_).
   INTERVIEWS_COLS: {
     eventId:0, candidate:1, role:2, date:3, time:4, duration:5,
-    interviewer:6, interviewerEmail:7, meet:8, status:9, notes:10, participants:11, candidateEmail:12
+    interviewer:6, interviewerEmail:7, meet:8, status:9, notes:10,
+    participants:11, candidateEmail:12, result:13
   },
+  INTERVIEWS_WIDTH: 14,
+  // Allowed values for the Result column, offered in the Completed list.
+  INTERVIEW_RESULTS: ["Selected", "Rejected", "On hold", "No show"],
   // Interviewer directory. Source of the "Interviewer" dropdown options in the
   // tracker modal (name + email). A Name | B Email. New interviewers added from
   // the UI are persisted here so they appear in the dropdown next time.
@@ -471,21 +482,22 @@ function readInterviews_() {
   if (!sh) return out;
   var lastRow = sh.getLastRow();
   if (lastRow < 1) return out;
-  var lastCol = Math.min(sh.getLastColumn(), 13);
+  var lastCol = Math.min(sh.getLastColumn(), SETTINGS.INTERVIEWS_WIDTH);
   var data = sh.getRange(1, 1, lastRow, lastCol).getValues();
   var C = SETTINGS.INTERVIEWS_COLS;
+  var nowS = nowStamp_();
   for (var i = 1; i < data.length; i++) {
     var r = data[i];
     if (!norm_(r[C.eventId]) && !norm_(r[C.candidate])) continue;
     var parts = [];
     try { parts = JSON.parse(norm_(r[C.participants]) || "[]") || []; } catch (e) { parts = []; }
-    out.push({
+    var rec = {
       eventId: norm_(r[C.eventId]),
       candidate: norm_(r[C.candidate]),
       candidateEmail: norm_(r[C.candidateEmail]),
       role: norm_(r[C.role]),
-      date: norm_(r[C.date]),
-      time: norm_(r[C.time]),
+      date: isoDate_(r[C.date]),
+      time: isoTime_(r[C.time]),
       duration: parseInt(r[C.duration], 10) || 60,
       interviewer: norm_(r[C.interviewer]),
       interviewerEmail: norm_(r[C.interviewerEmail]),
@@ -493,8 +505,12 @@ function readInterviews_() {
       meet: norm_(r[C.meet]),
       status: norm_(r[C.status]).toLowerCase() === "cancelled" ? "cancelled" : "active",
       notes: norm_(r[C.notes]),
+      result: norm_(r[C.result]),
       row: i + 1
-    });
+    };
+    rec.endsAt = interviewEndStamp_(rec);
+    rec.phase = interviewPhase_(rec, nowS);
+    out.push(rec);
   }
   return out;
 }
@@ -505,48 +521,108 @@ function allInterviews_() {
 }
 
 // store/update a row in the Interviews tab by event row; if row is null, append.
-function saveInterviewRow_(ev) {
+var INTERVIEW_HEADERS = [
+  "Event ID", "Candidate", "Role", "Date", "Time", "Duration (min)",
+  "Interviewer Name", "Interviewer Email", "Meet Link", "Status", "Notes",
+  "Participants", "Candidate Email", "Result"
+];
+
+// Get (or create) the tracker sheet, guaranteeing the full header and that the
+// Date/Time columns are formatted as plain text. Without the text format Sheets
+// re-coerces every "2026-09-10" we write back into a date value.
+function interviewSheet_() {
+  var W = SETTINGS.INTERVIEWS_WIDTH;
   var sh = ss_().getSheetByName(SETTINGS.INTERVIEWS_TAB_NAME);
-  if (!sh) sh = ss_().insertSheet(SETTINGS.INTERVIEWS_TAB_NAME);
-  // ensure a header exists
+  var created = false;
+  if (!sh) { sh = ss_().insertSheet(SETTINGS.INTERVIEWS_TAB_NAME); created = true; }
+
   if (sh.getLastRow() < 1) {
-    sh.getRange(1, 1, 1, 13).setValues([[
-      "Calendar Event ID","Candidate","Role","Date","Time","Duration (min)",
-      "Interviewer Name","Interviewer Email","Meet Link","Status","Notes","Participants","Candidate Email"
-    ]]);
-  } else if (sh.getLastColumn() < 13) {
-    // legacy sheet without the later columns: backfill Participants (12) and
-    // Candidate Email (13) headers without touching the first 11.
-    var hdr = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
-    var full = ["Calendar Event ID","Candidate","Role","Date","Time","Duration (min)",
-      "Interviewer Name","Interviewer Email","Meet Link","Status","Notes","Participants","Candidate Email"];
-    var colsToWrite = {};
-    for (var ci = 0; ci < full.length; ci++) {
-      if (!norm_(hdr[ci])) colsToWrite[ci] = full[ci];
+    sh.getRange(1, 1, 1, W).setValues([INTERVIEW_HEADERS]);
+    sh.setFrozenRows(1);
+    created = true;
+  } else {
+    // Backfill any header cell that is blank (column A has historically been
+    // empty) and any column added since the tab was made.
+    var have = sh.getLastColumn();
+    var hdr = sh.getRange(1, 1, 1, Math.max(have, 1)).getValues()[0];
+    var wrote = false;
+    for (var ci = 0; ci < W; ci++) {
+      if (!norm_(hdr[ci])) {
+        try { sh.getRange(1, ci + 1, 1, 1).setValue(INTERVIEW_HEADERS[ci]); wrote = true; } catch (e5) {}
+      }
     }
-    Object.keys(colsToWrite).forEach(function (k) {
-      try { sh.getRange(1, parseInt(k, 10) + 1, 1, 1).setValues([[colsToWrite[k]]]); } catch (e5) {}
-    });
+    if (wrote && have < W) created = true; // widened -> (re)apply the text format
   }
+
+  if (created) {
+    try {
+      var C = SETTINGS.INTERVIEWS_COLS;
+      var rows = Math.max(sh.getMaxRows() - 1, 1);
+      sh.getRange(2, C.date + 1, rows, 2).setNumberFormat("@"); // Date + Time
+    } catch (e6) { /* formatting is best-effort */ }
+  }
+  return sh;
+}
+
+// store/update a row in the tracker tab by row number; if row is null, append.
+function saveInterviewRow_(ev) {
+  var W = SETTINGS.INTERVIEWS_WIDTH;
+  var sh = interviewSheet_();
   var C = SETTINGS.INTERVIEWS_COLS;
-  var row = ["", "", "", "", "", "", "", "", "", "", "", "", ""];
+  var row = [];
+  for (var z = 0; z < W; z++) row.push("");
   row[C.eventId] = ev.eventId;
   row[C.candidate] = ev.candidate;
   row[C.role] = ev.role;
-  row[C.date] = ev.date;
-  row[C.time] = ev.time;
+  row[C.date] = isoDate_(ev.date);   // always store canonical ISO text
+  row[C.time] = isoTime_(ev.time);
   row[C.duration] = ev.duration;
   row[C.interviewer] = ev.interviewer;
   row[C.interviewerEmail] = ev.interviewerEmail;
   row[C.meet] = ev.meet;
   row[C.status] = ev.status;
-  row[C.notes] = ev.notes;
+  row[C.notes] = ev.notes || "";
   row[C.participants] = JSON.stringify(ev.participants || []);
   row[C.candidateEmail] = ev.candidateEmail;
-  if (ev.row) {
-    sh.getRange(ev.row, 1, 1, 13).setValues([row]);
-  } else {
-    sh.getRange(sh.getLastRow() + 1, 1, 1, 13).setValues([row]);
+  row[C.result] = ev.result || "";
+  var target = ev.row || (sh.getLastRow() + 1);
+  sh.getRange(target, 1, 1, W).setValues([row]);
+  ev.row = target;
+  ev.date = row[C.date];
+  ev.time = row[C.time];
+  ev.endsAt = interviewEndStamp_(ev);
+  ev.phase = interviewPhase_(ev);
+  return ev;
+}
+
+// Write just the Result + Note cells for one record. A targeted write so an
+// inline edit in the Completed list can't clobber the rest of the row.
+function setTrackerResult_(p) {
+  var id = norm_(p.id || p.eventId);
+  if (!id) throw new Error("interview id required");
+  var ev = readInterviews_().filter(function (x) { return x.eventId === id; })[0];
+  if (!ev) throw new Error("interview not found: " + id);
+
+  var C = SETTINGS.INTERVIEWS_COLS;
+  var sh = interviewSheet_();
+  if (p.result !== undefined) {
+    var want = norm_(p.result);
+    if (want) {
+      // accept only known values, case-insensitively, so the column stays clean
+      var ok = "";
+      SETTINGS.INTERVIEW_RESULTS.forEach(function (r) {
+        if (r.toLowerCase() === want.toLowerCase()) ok = r;
+      });
+      if (!ok) throw new Error("unknown result: " + want);
+      want = ok;
+    }
+    sh.getRange(ev.row, C.result + 1).setValue(want);
+    ev.result = want;
+  }
+  if (p.note !== undefined || p.notes !== undefined) {
+    var note = norm_(p.note !== undefined ? p.note : p.notes);
+    sh.getRange(ev.row, C.notes + 1).setValue(note);
+    ev.notes = note;
   }
   return ev;
 }
@@ -554,6 +630,102 @@ function saveInterviewRow_(ev) {
 function toIso_(dt) {
   var p = function (n) { return ("0" + n).slice(-2); };
   return dt.getFullYear() + "-" + p(dt.getMonth() + 1) + "-" + p(dt.getDate()) + " " + p(dt.getHours()) + ":" + p(dt.getMinutes());
+}
+
+/* ============================================================
+ * Date / time normalisation for the tracker
+ * ============================================================
+ * THE BUG THIS FIXES: writing the string "2026-09-10" with setValues() lets
+ * Sheets coerce the cell into a real date value. Reading it back yields a JS
+ * Date, and norm_() turned that into "Wed Sep 10 2026 00:00:00 GMT+0530...".
+ * Comparing that string against "2026-09-03" put every record in "upcoming"
+ * forever ("W" > "2"), so nothing ever moved to Completed.
+ * Every read now goes through isoDate_ / isoTime_, so both a real date value
+ * and a text cell end up as "YYYY-MM-DD" / "HH:MM".
+ * ============================================================ */
+
+function isDate_(v) { return Object.prototype.toString.call(v) === "[object Date]"; }
+
+function isoDate_(v) {
+  if (v === null || v === undefined || v === "") return "";
+  if (isDate_(v)) {
+    if (isNaN(v.getTime())) return "";
+    return v.getFullYear() + "-" + pad2_(v.getMonth() + 1) + "-" + pad2_(v.getDate());
+  }
+  var s = norm_(v);
+  if (!s) return "";
+  var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);           // ISO (what we write)
+  if (m) return m[1] + "-" + pad2_(m[2]) + "-" + pad2_(m[3]);
+  // Legacy hand-typed cells. Day-first, matching the sheet's en-IN locale;
+  // only reachable for rows not written by this app.
+  m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/);
+  if (m) return m[3] + "-" + pad2_(m[2]) + "-" + pad2_(m[1]);
+  var d = new Date(s);                                        // "Wed Sep 10 2026 ..."
+  if (!isNaN(d.getTime())) return d.getFullYear() + "-" + pad2_(d.getMonth() + 1) + "-" + pad2_(d.getDate());
+  return "";
+}
+
+function isoTime_(v) {
+  if (v === null || v === undefined || v === "") return "";
+  if (isDate_(v)) {
+    if (isNaN(v.getTime())) return "";
+    return pad2_(v.getHours()) + ":" + pad2_(v.getMinutes());
+  }
+  if (typeof v === "number") {
+    // a time-only Sheets value is a fraction of a day
+    var mins = Math.round(v * 24 * 60);
+    return pad2_(Math.floor(mins / 60) % 24) + ":" + pad2_(mins % 60);
+  }
+  var s = norm_(v);
+  var m = s.match(/(\d{1,2}):(\d{2})/);
+  if (!m) return "";
+  var h = parseInt(m[1], 10);
+  var ap = (s.match(/(am|pm)/i) || [])[1];
+  if (ap) {
+    ap = ap.toLowerCase();
+    if (ap === "pm" && h < 12) h += 12;
+    if (ap === "am" && h === 12) h = 0;
+  }
+  if (h > 23) h = 23;
+  return pad2_(h) + ":" + m[2];
+}
+
+// "YYYY-MM-DD HH:MM" for right now, in the script/sheet timezone. Comparable
+// with the stamps produced by interviewEndStamp_ as plain strings.
+function nowStamp_() {
+  var n = new Date();
+  return n.getFullYear() + "-" + pad2_(n.getMonth() + 1) + "-" + pad2_(n.getDate()) +
+    " " + pad2_(n.getHours()) + ":" + pad2_(n.getMinutes());
+}
+
+// The moment an interview is over = date + time + duration. A record with no
+// time is treated as running to the end of its day, so it flips to completed at
+// midnight rather than at 00:00 of the same morning.
+function interviewEndStamp_(ev) {
+  var date = isoDate_(ev.date);
+  if (!date) return "";
+  var time = isoTime_(ev.time);
+  var addMins = parseInt(ev.duration, 10) || 0;
+  if (!time) { time = "23:59"; addMins = 0; }
+  var hm = time.split(":");
+  var d = new Date(
+    parseInt(date.slice(0, 4), 10),
+    parseInt(date.slice(5, 7), 10) - 1,
+    parseInt(date.slice(8, 10), 10),
+    parseInt(hm[0], 10),
+    parseInt(hm[1], 10)
+  );
+  d = new Date(d.getTime() + addMins * 60000);
+  return d.getFullYear() + "-" + pad2_(d.getMonth() + 1) + "-" + pad2_(d.getDate()) +
+    " " + pad2_(d.getHours()) + ":" + pad2_(d.getMinutes());
+}
+
+// Which list a record belongs in. Date decides; nothing is stored.
+function interviewPhase_(ev, nowS) {
+  if (ev.status === "cancelled") return "cancelled";
+  var end = interviewEndStamp_(ev);
+  if (!end) return "upcoming";   // undated -> keep visible instead of losing it
+  return end <= (nowS || nowStamp_()) ? "completed" : "upcoming";
 }
 
 function createTrackerRow_(p) {
@@ -572,7 +744,8 @@ function createTrackerRow_(p) {
     participants: [],
     meet: "",
     status: "active",
-    notes: norm_(p.notes)
+    notes: norm_(p.notes),
+    result: ""
   };
   return saveInterviewRow_(ev);
 }
@@ -595,6 +768,7 @@ function updateTrackerRow_(p) {
     status: norm_(p.status === undefined ? ev.status : p.status) || "active",
     meet: ev.meet,
     notes: norm_(p.notes === undefined ? ev.notes : p.notes),
+    result: norm_(p.result === undefined ? ev.result : p.result),
     row: ev.row
   };
   return saveInterviewRow_(merged);
@@ -688,17 +862,23 @@ function doGet(e) {
       return json_({ ok: true, tab: dloc.tab, row: dloc.row, id: did });
 
     } else if (action === "tracker" || action === "calendar") {
-      // Interview tracker listings. Classification is by DATE only: any record
-      // whose selected date is before today -> "past" (completed); today and
-      // future dates -> "upcoming". Nothing is pushed to Google Calendar.
+      // The interview's own Date (+ Time + Duration) decides the list:
+      // still to come -> "upcoming"; already finished -> "past" (Completed).
+      // Nothing is stored, so a record moves across on its own as time passes.
+      var nowS = nowStamp_();
       var evs = allInterviews_().filter(function (x) { return x.status !== "cancelled"; });
-      evs.sort(function (a, b) { return (a.date + a.time).localeCompare(b.date + b.time); });
-      var p2 = function (n) { return ("0" + n).slice(-2); };
-      var today = new Date();
-      var todayStr = today.getFullYear() + "-" + p2(today.getMonth() + 1) + "-" + p2(today.getDate());
-      var upcoming = evs.filter(function (x) { return x.date >= todayStr; });
-      var past = evs.filter(function (x) { return x.date < todayStr; });
-      return json_({ events: evs, upcoming: upcoming, past: past });
+      var upcoming = [], past = [];
+      evs.forEach(function (x) {
+        x.phase = interviewPhase_(x, nowS);
+        (x.phase === "completed" ? past : upcoming).push(x);
+      });
+      var startKey = function (x) { return (x.date || "9999-99-99") + " " + (x.time || "99:99"); };
+      upcoming.sort(function (a, b) { return startKey(a).localeCompare(startKey(b)); }); // soonest first
+      past.sort(function (a, b) { return startKey(b).localeCompare(startKey(a)); });      // most recent first
+      return json_({
+        events: evs, upcoming: upcoming, past: past,
+        now: nowS, results: SETTINGS.INTERVIEW_RESULTS
+      });
 
     } else if (action === "trackercreate" || action === "calendarcreate") {
       cacheClear_();
@@ -714,6 +894,12 @@ function doGet(e) {
       cacheClear_();
       return json_(cancelTrackerRow_(p));
 
+    } else if (action === "trackerresult") {
+      // Result + Note for a finished interview, stored on the tracker row.
+      cacheClear_();
+      var re = setTrackerResult_(p);
+      return json_({ ok: true, eventId: re.eventId, result: re.result, note: re.notes, event: re });
+
     } else if (action === "interviewers") {
       return json_({ interviewers: readInterviewers_() });
 
@@ -721,6 +907,12 @@ function doGet(e) {
       cacheClear_();
       var iv = addInterviewer_(p.name, p.email);
       return json_({ ok: true, interviewer: iv, interviewers: readInterviewers_() });
+
+    } else if (action === "resumefolder") {
+      // Drive folder where uploaded resumes are stored, shared anyone-with-link,
+      // so Settings can show the user where resumes go.
+      var rFolder = getResumeFolderLink_();
+      return json_({ ok: true, name: rFolder.name, url: rFolder.url });
 
     } else {
       throw new Error("unknown action: " + action);
@@ -785,8 +977,8 @@ function error_(err) {
  * File upload (POST) -> resume link
  * ============================================================
  * The web app accepts a multipart/form POST with a field named "file"
- * (a Blob) plus text params. Uploaded resumes are stored in a Google Drive
- * folder ("Vyomic Resumes"), shared "anyone with the link can view", and the
+ * (a Blob) plus text params. Uploaded resumes are stored in a fixed Google Drive
+ * folder (RESUME_FOLDER_ID), shared "anyone with the link can view", and the
  * resulting shareable link is stored in the applicant's Resume column (F).
  * ============================================================ */
 
@@ -799,15 +991,14 @@ function doPost(e) {
       throw new Error("unknown action: " + action);
     }
 
-    var fparam = (e && e.parameter) ? e.parameter.file : null;
-    var blob = (fparam && typeof fparam.getBytes === "function") ? fparam : null;
+    var blob = uploadBlob_(p);
     if (!blob) {
-      // Fall back to the raw POST body if the browser didn't send a named blob.
-      blob = (e && e.postData && e.postData.contents) ? Utilities.newBlob(e.postData.contents) : null;
+      throw new Error("no file received - the request carried no 'dataWebSafe' " +
+        "or 'data' field. Apps Script cannot read a file out of a " +
+        "multipart/form-data body; send the bytes as base64 instead.");
     }
-    if (!blob) throw new Error("no file received");
 
-    var folder = getOrCreateFolder_("Vyomic Resumes");
+    var folder = driveFolderOrThrow_();
     var candidateName = norm_(p.candidate || p.name || "");
     var ext = "";
     var m = /^(.+?)(\.[a-z0-9]{1,6})$/i.exec(norm_(p.filename || blob.getName() || ""));
@@ -835,10 +1026,81 @@ function doPost(e) {
   }
 }
 
-// Find (or create) the Drive folder used to store uploaded resumes.
-function getOrCreateFolder_(name) {
-  var it = DriveApp.getFoldersByName(name);
+/* Turn the POST params into a Blob.
+ * Apps Script cannot extract a file from a multipart/form-data body - the text
+ * fields show up in e.parameter but the file never does, which is why a
+ * FormData upload always failed with "no file received". The client therefore
+ * sends the bytes as web-safe base64 in a form-urlencoded field. The standard
+ * base64 and multipart branches are kept as fallbacks. */
+function uploadBlob_(p) {
+  var name = norm_(p.filename) || "resume";
+  var type = norm_(p.mimeType) || "application/octet-stream";
+
+  var ws = norm_(p.dataWebSafe);
+  if (ws) return Utilities.newBlob(Utilities.base64DecodeWebSafe(ws), type, name);
+
+  var std = norm_(p.data);
+  if (std) {
+    // tolerate a web-safe payload arriving in the plain field
+    if (std.indexOf("-") !== -1 || std.indexOf("_") !== -1) {
+      return Utilities.newBlob(Utilities.base64DecodeWebSafe(std), type, name);
+    }
+    return Utilities.newBlob(Utilities.base64Decode(std), type, name);
+  }
+
+  var f = p.file;
+  if (f && typeof f.getBytes === "function") return f;   // never happens today
+  return null;
+}
+
+/* Drive needs the drive scope on the deployment's token. A Web App authorised
+ * before the Drive code existed keeps its old, narrower token and every
+ * DriveApp call throws "You do not have permission to call ...". Surfacing that
+ * as an actionable message beats leaking the raw scope error to the UI. */
+function driveFolderOrThrow_() {
+  try {
+    return resumeFolder_();
+  } catch (err) {
+    var msg = String(err && err.message ? err.message : err);
+    if (msg.indexOf("permission") !== -1 || msg.indexOf("scope") !== -1 ||
+        msg.indexOf("auth") !== -1) {
+      throw new Error("Google Drive access has not been granted to this deployment. " +
+        "Open the Apps Script editor, run any function once and accept the Drive " +
+        "permission prompt, then Deploy > Manage deployments > Edit > New version. " +
+        "(Original: " + msg + ")");
+    }
+    throw err;
+  }
+}
+
+// Google Drive folder where uploaded resumes are stored.
+var RESUME_FOLDER_ID = "1xrPtE6snrfT2-7V0avicsnmfEZV7WYha";
+
+// Resolve the fixed resume Drive folder (shared among the app's use cases).
+function resumeFolder_() {
+  var byId = null;
+  try { byId = DriveApp.getFolderById(RESUME_FOLDER_ID); } catch (e) { byId = null; }
+  if (byId) return byId;
+  // Fall back to a folder found by name, then create one if needed.
+  var it = DriveApp.getFoldersByName("Vyomic Resumes");
   if (it.hasNext()) return it.next();
-  return DriveApp.createFolder(name);
+  return DriveApp.createFolder("Vyomic Resumes");
+}
+
+// Return the Drive folder that uploaded resumes go into, shared "anyone with the
+// link can view" so the Settings screen can show a link to it. Sharing the whole
+// folder (view) is separate from per-file sharing done by doPost.
+function getResumeFolderLink_() {
+  var folder = driveFolderOrThrow_();
+  try {
+    var access = folder.getSharingAccess();
+    var perm = folder.getSharingPermission();
+    if (access !== DriveApp.Access.ANYONE_WITH_LINK) {
+      folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    }
+  } catch (e) {
+    // Drive may not expose sharing for some folder states; fall back silently.
+  }
+  return { name: folder.getName(), url: folder.getUrl() };
 }
 

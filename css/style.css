@@ -424,6 +424,8 @@ input, select { font-family: inherit; font-size: 14px; }
 .field > span { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px; }
 .field .input, .field input, .field select { width: 100%; }
 .field small { color: var(--muted); display: block; margin-top: 4px; }
+.config-resume-folder { min-height: 20px; display: flex; align-items: center; gap: 6px; }
+.config-resume-folder-status { color: var(--muted); font-size: 13px; }
 .modal-actions {
   display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap;
   margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); flex: 0 0 auto;
@@ -686,8 +688,8 @@ td .inline-loader { padding: 22px 8px; }
 
 /* ---------- Interview tracker table ---------- */
 .iv-when { display: flex; flex-direction: column; gap: 2px; }
-.iv-when-date { font-weight: 500; }
-.iv-when-rel { font-size: 11.5px; color: var(--muted); }
+.iv-when-main { font-weight: 600; white-space: nowrap; }
+.iv-when-sub { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
 .iv-person { display: flex; align-items: center; gap: 8px; }
 .iv-avatar {
   width: 26px; height: 26px; border-radius: 50%; flex: none;
@@ -696,8 +698,25 @@ td .inline-loader { padding: 22px 8px; }
   background: var(--active-tab); color: var(--active-tab-text);
 }
 .iv-unassigned { color: var(--muted); font-style: italic; font-size: 12.5px; }
-.table .iv-decision { min-width: 118px; padding: 6px 8px; font-size: 13px; cursor: pointer; }
 .iv-row-today td { background: color-mix(in srgb, var(--amber-bg) 45%, transparent); }
+
+/* Result + Note, the outcome columns on the Completed list */
+.table .iv-result {
+  min-width: 130px; padding: 6px 8px; font-size: 13px; cursor: pointer;
+  color: var(--muted);
+}
+.table .iv-result.has-value { color: var(--text); font-weight: 500; }
+.table .iv-note { min-width: 190px; padding: 6px 10px; font-size: 13px; }
+.table .iv-result:disabled, .table .iv-note:disabled { opacity: 0.55; cursor: wait; }
+
+/* "Goes to" hint in the tracker modal (replaces the old no-op Status picker) */
+.cal-phase-wrap > span { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px; }
+.cal-phase-hint {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 9px 12px; border: 1px dashed var(--border); border-radius: 8px;
+  background: var(--soft);
+}
+.cal-phase-note { font-size: 12px; color: var(--muted); }
 
 /* ---------- Candidate sections ---------- */
 .cand-sections { padding: 24px; display: flex; flex-direction: column; gap: 20px; }

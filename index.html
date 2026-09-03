@@ -300,7 +300,14 @@
           </label>
           <input id="cal-interviewer" type="hidden" />
           <input id="cal-interviewer-email" type="hidden" />
-          <label class="field"><span>Status</span><select id="cal-status" class="input"></select></label>
+          <!-- No Status picker: the Date + Time + Duration decide whether this
+               record sits in Upcoming or Completed, so it is shown, not chosen. -->
+          <div class="field field-full cal-phase-wrap">
+            <span>Goes to</span>
+            <div id="cal-phase-hint" class="cal-phase-hint">
+              <span class="badge badge-gray">Set a date</span>
+            </div>
+          </div>
           <div class="add-interviewer hidden" id="cal-add-iv">
             <div class="add-grid">
               <label class="field"><span>New interviewer name</span><input id="cal-iv-new-name" class="input" type="text" placeholder="e.g. Lokesh" /></label>
@@ -331,6 +338,13 @@
           <span>Web App URL</span>
           <input id="config-input" type="text" placeholder="https://script.google.com/macros/s/.../exec" />
           <small>Deploy your Code.gs as a Web App, then paste the /exec link here.</small>
+        </label>
+        <label class="field">
+          <span>Resume Drive Folder</span>
+          <div id="config-resume-folder" class="config-resume-folder">
+            <span class="config-resume-folder-status">Loading…</span>
+          </div>
+          <small>Uploaded resumes are stored here (Drive folder "Vyomic Resumes").</small>
         </label>
         <div class="modal-actions">
           <button type="button" id="config-clear-btn" class="btn btn-ghost">Clear</button>
