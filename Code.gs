@@ -118,27 +118,67 @@ function text_(v) { return { value: String(v === undefined || v === null ? "" : 
  * write (update/add/delete/calendar) clears the cache so changes
  * appear on the next load.
  * ============================================================ */
-var CACHE_KEY = "hiring_dashboard_v1";
+var CACHE_KEY = "hiring_dashboard_v1";       // kept: legacy dashboard key
 var CACHE_EXPIRES = 30;
 
-function cacheGet_() {
+/* Per-action CacheService keys. Previously ONLY the dashboard was cached, so
+ * the Applicants and Interviews views paid the full sheet-read cost on every
+ * single visit. */
+var CACHE_KEYS = {
+  dashboard: "hiring_dash_v2",
+  applicants: "hiring_apps_v2",
+  tracker: "hiring_trk_v2",
+  interviewers: "hiring_ivrs_v2",
+  statusOptions: "hiring_statusopts_v2"
+};
+var CACHE_MAX_BYTES = 95000;   // CacheService rejects values over ~100KB
+
+function cacheGetK_(key) {
   try {
-    var data = CacheService.getScriptCache().get(CACHE_KEY);
+    var data = CacheService.getScriptCache().get(key);
     return data ? JSON.parse(data) : null;
-  } catch (e) {
-    return null;
-  }
+  } catch (e) { return null; }
 }
-function cachePut_(obj) {
+function cachePutK_(key, obj, ttl) {
   try {
-    CacheService.getScriptCache().put(CACHE_KEY, JSON.stringify(obj), CACHE_EXPIRES);
+    var s = JSON.stringify(obj);
+    if (s.length > CACHE_MAX_BYTES) return;   // too big to cache; serve live
+    CacheService.getScriptCache().put(key, s, ttl || CACHE_EXPIRES);
   } catch (e) {}
 }
+
+// Back-compat wrappers for the original dashboard-only helpers.
+function cacheGet_() { return cacheGetK_(CACHE_KEYS.dashboard); }
+function cachePut_(obj) { cachePutK_(CACHE_KEYS.dashboard, obj); }
+
 function cacheClear_() {
   try {
-    CacheService.getScriptCache().remove(CACHE_KEY);
+    var all = [CACHE_KEY];
+    Object.keys(CACHE_KEYS).forEach(function (k) { all.push(CACHE_KEYS[k]); });
+    CacheService.getScriptCache().removeAll(all);
   } catch (e) {}
+  memoClear_();   // a write invalidates this execution's reads too
 }
+
+/* ============================================================
+ * Per-execution memoisation
+ * ============================================================
+ * Sheet reads are the expensive part of a request, and the old code repeated
+ * them within a single execution:
+ *   - buildDashboard_ read the Applicants tab TWICE (withCounts_ then
+ *     allApplicants_), a third time if statusOptions_ fell back to scanning.
+ *   - ?action=candidate read it twice (locateApplicant_ then readTab_).
+ *   - setTrackerResult_/updateTrackerRow_ re-read the whole tracker tab.
+ * These memos live only for the duration of one doGet/doPost, so they cannot
+ * serve stale data across requests. Writes call memoClear_ via cacheClear_.
+ * ============================================================ */
+var MEMO = {};
+function memo_(key, producer) {
+  if (Object.prototype.hasOwnProperty.call(MEMO, key)) return MEMO[key];
+  MEMO[key] = producer();
+  return MEMO[key];
+}
+function memoClear_() { MEMO = {}; }
 
 /* ============================================================
  * Field-name resolution
@@ -160,6 +200,10 @@ function canonField_(field) {
  * ============================================================ */
 
 function readRoles_() {
+  return memo_("roles", readRolesUncached_);
+}
+
+function readRolesUncached_() {
   var sh = ss_().getSheetByName(SETTINGS.ROLES_TAB_NAME);
   if (!sh) return [];
   var lastRow = sh.getLastRow();
@@ -234,13 +278,27 @@ function mapApplicant_(row) {
 }
 
 // Read the single "Applicants" tab (row numbers preserved for updates).
+// Memoised per execution - this was the most-repeated expensive call.
 function readApplicants_() {
+  return memo_("applicants", readApplicantsUncached_);
+}
+
+// Widest column the app actually maps, so we stop pulling the sheet's trailing
+// blank columns (getLastColumn() reported 25 against 16 mapped fields).
+var APP_READ_WIDTH = (function () {
+  var max = 0;
+  var C = SETTINGS.APP_COLS;
+  Object.keys(C).forEach(function (k) { if (C[k] > max) max = C[k]; });
+  return max + 1;
+})();
+
+function readApplicantsUncached_() {
   var sh = ss_().getSheetByName(SETTINGS.APP_TAB_NAME);
   var out = [];
   if (!sh) return out;
   var lastRow = sh.getLastRow();
-  if (lastRow < 1) return out;
-  var lastCol = sh.getLastColumn();
+  if (lastRow < 2) return out;
+  var lastCol = Math.min(sh.getLastColumn(), APP_READ_WIDTH);
   var data = sh.getRange(1, 1, lastRow, lastCol).getValues();
   for (var i = 1; i < data.length; i++) {
     var a = mapApplicant_(data[i]);
@@ -258,7 +316,20 @@ function readTab_(tab) { return readApplicants_(); }
 // dropdown on the Status column (column J), so the website shows exactly the
 // same options as the sheet. Falls back to the distinct Status values actually
 // present in the data if no validation list is configured.
+/* getDataValidations() over the Status column is one of the slower Sheets calls
+ * and the list changes very rarely, so it gets a longer cache than the data
+ * itself (5 minutes) on top of the per-execution memo. */
 function statusOptions_() {
+  return memo_("statusOptions", function () {
+    var hit = cacheGetK_(CACHE_KEYS.statusOptions);
+    if (hit) return hit;
+    var val = statusOptionsUncached_();
+    cachePutK_(CACHE_KEYS.statusOptions, val, 300);
+    return val;
+  });
+}
+
+function statusOptionsUncached_() {
   var sh = ss_().getSheetByName(SETTINGS.APP_TAB_NAME);
   var out = [];
   if (sh) {
@@ -298,6 +369,10 @@ function statusOptions_() {
 // modal's "Interviewer" dropdown options. The tab is created on demand with a
 // header if missing.
 function readInterviewers_() {
+  return memo_("interviewers", readInterviewersUncached_);
+}
+
+function readInterviewersUncached_() {
   var sh = ss_().getSheetByName(SETTINGS.INTERVIEWERS_TAB_NAME);
   if (!sh) {
     sh = ss_().insertSheet(SETTINGS.INTERVIEWERS_TAB_NAME);
@@ -329,10 +404,12 @@ function addInterviewer_(name, email) {
     if (String(list[i].name).toLowerCase() === n.toLowerCase()) {
       // existing interviewer: refresh the email.
       sh.getRange(i + 2, 2, 1, 1).setValue(emailVal);
+      memoClear_();  // the caller re-reads the directory for its response
       return { name: list[i].name, email: emailVal };
     }
   }
   sh.getRange(sh.getLastRow() + 1, 1, 1, 2).setValues([[n, emailVal]]);
+  memoClear_();      // ditto - without this the new name is missing from the reply
   return { name: n, email: emailVal };
 }
 
@@ -473,12 +550,32 @@ var FIELD_MAP = {
 
 // Find the applicant row by Applicant ID (case-insensitive) in the single
 // Applicants tab. Returns {tab, row} or null (tab is always the Applicants tab).
+/* Locate by id. If the applicants list is already loaded in this execution use
+ * it; otherwise read ONLY column A instead of the whole sheet. Every inline
+ * status edit and every ?action=update went through here and used to pull all
+ * 16 columns of every row just to match one id. */
 function locateApplicant_(id, preferredTab) {
-  if (!id) return null;
-  var list = readApplicants_();
-  for (var j = 0; j < list.length; j++) {
-    if (norm_(list[j].id).toLowerCase() === norm_(id).toLowerCase()) {
-      return { tab: SETTINGS.APP_TAB_NAME, row: list[j].row };
+  var want = norm_(id).toLowerCase();
+  if (!want) return null;
+
+  if (Object.prototype.hasOwnProperty.call(MEMO, "applicants")) {
+    var list = MEMO.applicants;
+    for (var j = 0; j < list.length; j++) {
+      if (norm_(list[j].id).toLowerCase() === want) {
+        return { tab: SETTINGS.APP_TAB_NAME, row: list[j].row };
+      }
+    }
+    return null;
+  }
+
+  var sh = ss_().getSheetByName(SETTINGS.APP_TAB_NAME);
+  if (!sh) return null;
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return null;
+  var ids = sh.getRange(2, SETTINGS.APP_COLS.applicantId + 1, lastRow - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (norm_(ids[i][0]).toLowerCase() === want) {
+      return { tab: SETTINGS.APP_TAB_NAME, row: i + 2 };
     }
   }
   return null;
@@ -494,6 +591,10 @@ function locateApplicant_(id, preferredTab) {
  * ============================================================ */
 
 function readInterviews_() {
+  return memo_("interviews", readInterviewsUncached_);
+}
+
+function readInterviewsUncached_() {
   var sh = ss_().getSheetByName(SETTINGS.INTERVIEWS_TAB_NAME);
   var out = [];
   if (!sh) return out;
@@ -604,6 +705,7 @@ function saveInterviewRow_(ev) {
   row[C.result] = ev.result || "";
   var target = ev.row || (sh.getLastRow() + 1);
   sh.getRange(target, 1, 1, W).setValues([row]);
+  memoClear_();   // the tracker tab just changed; drop this execution's read
   ev.row = target;
   ev.date = row[C.date];
   ev.time = row[C.time];
@@ -641,6 +743,7 @@ function setTrackerResult_(p) {
     sh.getRange(ev.row, C.notes + 1).setValue(note);
     ev.notes = note;
   }
+  memoClear_();
   return ev;
 }
 
@@ -803,6 +906,53 @@ function cancelTrackerRow_(p) {
 }
 
 /* ============================================================
+ * Payload builders (shared by the single-action routes and ?action=bootstrap)
+ * ============================================================ */
+
+/* The interview's own Date (+ Time + Duration) decides the list: still to come
+ * -> "upcoming"; already finished -> "past" (Completed). Nothing is stored, so
+ * a record moves across on its own as time passes. */
+function trackerPayload_() {
+  var hit = cacheGetK_(CACHE_KEYS.tracker);
+  if (hit) {
+    // Phase is time-dependent, so re-derive it even on a cache hit rather than
+    // serving a stale upcoming/completed split.
+    return retrackPhases_(hit);
+  }
+  var nowS = nowStamp_();
+  var evs = allInterviews_().filter(function (x) { return x.status !== "cancelled"; });
+  var payload = { events: evs, now: nowS, results: SETTINGS.INTERVIEW_RESULTS };
+  cachePutK_(CACHE_KEYS.tracker, payload);
+  return retrackPhases_(payload);
+}
+
+// Split (or re-split) a tracker payload against the current clock.
+function retrackPhases_(payload) {
+  var nowS = nowStamp_();
+  var evs = payload.events || [];
+  var upcoming = [], past = [];
+  evs.forEach(function (x) {
+    x.phase = interviewPhase_(x, nowS);
+    (x.phase === "completed" ? past : upcoming).push(x);
+  });
+  var startKey = function (x) { return (x.date || "9999-99-99") + " " + (x.time || "99:99"); };
+  upcoming.sort(function (a, b) { return startKey(a).localeCompare(startKey(b)); }); // soonest first
+  past.sort(function (a, b) { return startKey(b).localeCompare(startKey(a)); });      // most recent first
+  return {
+    events: evs, upcoming: upcoming, past: past,
+    now: nowS, results: SETTINGS.INTERVIEW_RESULTS
+  };
+}
+
+function dashboardPayload_() {
+  var hit = cacheGet_();
+  if (hit) return hit;
+  var dash = buildDashboard_();
+  cachePut_(dash);
+  return dash;
+}
+
+/* ============================================================
  * HTTP handler
  * ============================================================ */
 
@@ -812,17 +962,17 @@ function doGet(e) {
     var action = p.action || "dashboard";
 
     if (action === "dashboard") {
-      var cached = cacheGet_();
-      if (cached) return json_(cached);
-      var dash = buildDashboard_();
-      cachePut_(dash);
-      return json_(dash);
+      return json_(dashboardPayload_());
 
     } else if (action === "roles") {
       return json_(withCounts_(readRoles_()));
 
     } else if (action === "applicants") {
-      return json_({ applicants: allApplicants_(readRoles_()), statusOptions: statusOptions_() });
+      var appsHit = cacheGetK_(CACHE_KEYS.applicants);
+      if (appsHit) return json_(appsHit);
+      var appsPayload = { applicants: readApplicants_(), statusOptions: statusOptions_() };
+      cachePutK_(CACHE_KEYS.applicants, appsPayload);
+      return json_(appsPayload);
 
     } else if (action === "roleapplicants") {
       var role = resolveRoleTitle_(p.role || p.title || "");
@@ -832,11 +982,14 @@ function doGet(e) {
 
     } else if (action === "candidate") {
       var id = p.id || "";
-      var tab = p.tab || "";
-      var loc = tab ? findInTab_(tab, id) : locateApplicant_(id);
+      var loc = locateApplicant_(id);
       if (!loc) throw new Error("candidate not found: " + id);
-      var hit = readTab_(loc.tab).filter(function (a) { return a.row === loc.row; })[0];
-      if (!hit) throw new Error("candidate not found");
+      // Read just the located row. This used to call readTab_(), a full-sheet
+      // read, right after locateApplicant_ had already read the sheet.
+      var csh = ss_().getSheetByName(loc.tab);
+      var cw = Math.min(csh.getLastColumn(), APP_READ_WIDTH);
+      var hit = mapApplicant_(csh.getRange(loc.row, 1, 1, cw).getValues()[0]);
+      hit.row = loc.row;
       return json_(hit);
 
     } else if (action === "interviews") {
@@ -879,22 +1032,20 @@ function doGet(e) {
       return json_({ ok: true, tab: dloc.tab, row: dloc.row, id: did });
 
     } else if (action === "tracker" || action === "calendar") {
-      // The interview's own Date (+ Time + Duration) decides the list:
-      // still to come -> "upcoming"; already finished -> "past" (Completed).
-      // Nothing is stored, so a record moves across on its own as time passes.
-      var nowS = nowStamp_();
-      var evs = allInterviews_().filter(function (x) { return x.status !== "cancelled"; });
-      var upcoming = [], past = [];
-      evs.forEach(function (x) {
-        x.phase = interviewPhase_(x, nowS);
-        (x.phase === "completed" ? past : upcoming).push(x);
-      });
-      var startKey = function (x) { return (x.date || "9999-99-99") + " " + (x.time || "99:99"); };
-      upcoming.sort(function (a, b) { return startKey(a).localeCompare(startKey(b)); }); // soonest first
-      past.sort(function (a, b) { return startKey(b).localeCompare(startKey(a)); });      // most recent first
+      return json_(trackerPayload_());
+
+    } else if (action === "bootstrap") {
+      /* Everything the dashboard needs on first paint, in ONE round trip.
+       * Measured: an Apps Script request costs ~1.8-2s of pure overhead before
+       * any sheet work, so four separate calls (dashboard, applicants, tracker,
+       * interviewers) spent ~6s waiting rather than working. The individual
+       * actions all still exist; this is purely an additive fast path. */
       return json_({
-        events: evs, upcoming: upcoming, past: past,
-        now: nowS, results: SETTINGS.INTERVIEW_RESULTS
+        dashboard: dashboardPayload_(),
+        applicants: readApplicants_(),
+        statusOptions: statusOptions_(),
+        tracker: trackerPayload_(),
+        interviewers: readInterviewers_()
       });
 
     } else if (action === "trackercreate" || action === "calendarcreate") {
@@ -996,6 +1147,7 @@ function addApplicant_(sh, p) {
   row[C.review4] = norm_(p.review4);
   var newRow = sh.getLastRow() + 1;
   sh.getRange(newRow, 1, 1, 16).setValues([row]);
+  memoClear_();   // applicants list just grew
   var applicant = mapApplicant_(row);
   applicant.row = newRow;
   return { row: newRow, id: row[C.applicantId], applicant: applicant };

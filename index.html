@@ -6,10 +6,23 @@
   <title>dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&display=swap" rel="stylesheet" />
+  <!-- warm the Apps Script connection while the page is still parsing, so the
+       first data request doesn't pay DNS + TLS setup -->
+  <link rel="preconnect" href="https://script.google.com" crossorigin />
+  <link rel="dns-prefetch" href="https://script.googleusercontent.com" />
+  <!-- non-blocking: Archivo Black is only used for the loading-screen title, so
+       it must not hold up first render -->
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&display=swap" rel="stylesheet"
+        media="print" onload="this.media='all'" />
   <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABwAAAAcCAMAAABF0y+mAAAAt1BMVEUeHh4AAABJNBR9WSKUaSiYbCnioD3rpj/Okje6gzFuTh5eQxgvIAtlRxpOOBVWPRhhSSI0JhBFNBmLYyZZPxjZmjpdTC0YEwtsWDMiGAgpHQo/LA8lGglsXj9gVDhbTTJQPR6ikWZTSTI1LyCSg1x1UyDIjjZmVDIhHRNMQiyMdk1kVzwOCgMsJxw7MSBWRSlKPCRCMx2Ab0hqTiE5MiJ7bk2tlWU6KQ5uY0eVgFSMe1aCbECTdkIh4MFYAAABRUlEQVR4AYzSA4IkMQBA0fll2zNtb9u8/7UWlR2zEL04ubvj0+crgx+jJCuKLH2IqqYbpmnomvoOLd20AQdcU3efUTTzAGwLwNeUl6gYABCEEQBG/IxJimSHkOUUUNo2qfeEacX9Q1Q0GtBsFW1snPQRZRUIgE6312+CE4E6QOAQYATjSesXUyiA2VDgzASYzFkslisaYxoApkBbBtaNTmtVROVo1O1vMiD2a5R9nO2K7i5bwTrr7am2HsmgxjgsY4DDbAZjOnPAtY+yaBkys9tM6WawanCi7YYcrRp9H8iz8+m0b/Ual9PmWgGJVCMDgOWM+eQ05QQBwOM6LYAEZq1GhyYkAJZAklxgfltwDSD36l8gPiQPfhL54Fe2nbsg8YhViefOQCpxgcSlLJ+QGQDg3h8RBR/cvkT+6mo6f0Z8usWbHQBt1hrlwa0P8QAAAABJRU5ErkJggg==" />
   <link rel="stylesheet" href="css/style.css" />
-  <script src="https://cdn.jsdelivr.net/npm/@lottiefiles/dotlottie-player@2.3.1/dist/dotlottie-player.js"></script>
+  <!-- defer: this was a blocking <script> in <head>, so ~100KB from a third-party
+       CDN had to download and execute before the page could render at all. The
+       loader is a nice-to-have; nothing else depends on it. -->
+  <script defer src="https://cdn.jsdelivr.net/npm/@lottiefiles/dotlottie-player@2.3.1/dist/dotlottie-player.js"></script>
+  <!-- app scripts are deferred too, so parsing is never blocked -->
+  <script defer src="js/api.js"></script>
+  <script defer src="js/app.js"></script>
 </head>
 <body>
   <!-- Full-page loading overlay: shown until the first dashboard data loads -->
@@ -354,7 +367,5 @@
     </div>
   </div>
 
-  <script src="js/api.js"></script>
-  <script src="js/app.js"></script>
 </body>
 </html>

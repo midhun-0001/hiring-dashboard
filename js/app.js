@@ -312,7 +312,7 @@
   function applyConfigUI() {
     var ok = API.isConfigured();
     $("config-banner").classList.toggle("hidden", ok);
-    if (ok) loadDashboard();
+    if (ok) loadInitial();
     else hideLoading(); // nothing to load yet -> show the connect banner
   }
 
@@ -368,27 +368,66 @@
     $("last-updated").textContent = "Last updated: " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   }
 
-  function loadDashboard() {
+  function dashboardSkeletons() {
     showRoleLoader();
     skeletonStats();
     skeletonChart();
     skeletonRoles("roles-grid", 6);
     skeletonList("dashboard-upcoming", 3);
-    // Let the branded overlay play briefly, then hand off to the skeletons
-    // so a slow fetch shows the page taking shape instead of a blank screen.
-    setTimeout(hideLoading, 900);
+    // Hand straight off to the skeletons. This used to be a flat
+    // setTimeout(hideLoading, 900), which added 900ms to every single load
+    // whether the data was ready or not.
+    hideLoading();
+  }
+
+  // Paint a dashboard payload. Shared by loadDashboard and the bootstrap path.
+  function applyDashboard(data) {
+    state.dashboard = data;
+    if (data.statusOptions && data.statusOptions.length) state.statusOptions = data.statusOptions;
+    renderStats(data.stats);
+    renderRoleChart(data.roles);
+    state.roles = data.roles || [];
+    renderRoles("roles-grid", state.roles);
+    $("roles-count").textContent = data.roles.length + " role" + (data.roles.length === 1 ? "" : "s");
+    renderDashboardInterviews(data);
+    setUpdated();
+    hideLoading();
+    hideRoleLoader();
+  }
+
+  /* First paint: one request for everything.
+     An Apps Script call costs ~1.8-2s of pure round-trip overhead before it
+     touches a sheet, so fetching dashboard / applicants / tracker /
+     interviewers separately spent ~6s waiting rather than working. ?action=
+     bootstrap returns all four together. If the deployed Code.gs predates it,
+     the catch falls back to the original per-action path. */
+  function loadInitial() {
+    dashboardSkeletons();
+    API.bootstrap().then(function (b) {
+      if (!b || !b.dashboard) throw new Error("no bootstrap payload");
+      applyDashboard(b.dashboard);
+
+      if (b.statusOptions && b.statusOptions.length) state.statusOptions = b.statusOptions;
+      if (b.applicants && b.applicants.length) {
+        state.allApplicants = b.applicants;
+        loadedApplicantsOnInit = true;   // Applicants tab opens with no fetch
+        decisionsFetched = true;
+        buildApplicantFilters();
+      }
+      if (b.tracker) {
+        state.calendar = b.tracker;      // Interviews tab opens with no fetch
+        updateIvCounts();
+      }
+      if (b.interviewers && b.interviewers.length) state.interviewers = b.interviewers;
+    }).catch(function () {
+      loadDashboard();
+    });
+  }
+
+  function loadDashboard() {
+    dashboardSkeletons();
     API.dashboard().then(function (data) {
-      state.dashboard = data;
-      if (data.statusOptions && data.statusOptions.length) state.statusOptions = data.statusOptions;
-      renderStats(data.stats);
-      renderRoleChart(data.roles);
-      state.roles = data.roles || [];
-      renderRoles("roles-grid", state.roles);
-      $("roles-count").textContent = data.roles.length + " role" + (data.roles.length === 1 ? "" : "s");
-      renderDashboardInterviews(data);
-      setUpdated();
-      hideLoading();
-      setTimeout(hideRoleLoader, 900); // keep the satellite visible briefly on the landing page
+      applyDashboard(data);
       // refresh global applicants if applicants view is active/loaded
       if (state.allApplicants.length === 0 && state.currentView === "applicants") loadApplicantsLazy();
     }).catch(function () {

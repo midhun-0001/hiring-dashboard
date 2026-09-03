@@ -34,6 +34,7 @@ var API = (function () {
   // classified them as writes: every visit to the Interviews tab wiped the whole
   // client cache and forced the dashboard + applicants to refetch.
   var CACHE_ACTIONS = {
+    bootstrap: true,
     dashboard: true, roles: true, roleapplicants: true,
     applicants: true, interviews: true, calendar: true, candidate: true,
     tracker: true, interviewers: true, resumefolder: true
@@ -101,6 +102,8 @@ var API = (function () {
     setUrl: setUrl,
     isConfigured: isConfigured,
     refresh: function () { cacheClear(); },
+    // Everything needed for first paint in one round trip (see Code.gs).
+    bootstrap: function () { return call({ action: "bootstrap" }); },
     dashboard: function () { return call({ action: "dashboard" }); },
     roles: function () { return call({ action: "roles" }); },
     roleApplicants: function (role) { return call({ action: "roleapplicants", role: role }); },
