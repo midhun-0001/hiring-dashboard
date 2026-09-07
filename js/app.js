@@ -319,14 +319,13 @@
   function openConfigModal() {
     $("config-input").value = API.getUrl();
     var gh = $("config-github-token");
-    if (gh) gh.value = API.getGitHubToken();
+    if (gh) gh.value = API.hasGitHubOverride() ? API.getGitHubToken() : "";
     $("config-modal").classList.remove("hidden");
     var holder = $("config-resume-folder");
     if (holder) {
-      var tok = API.getGitHubToken();
-      holder.innerHTML = tok
-        ? '<span class="config-resume-folder-status">GitHub token set — dropped resumes upload to <code>resumes/</code> in the repo automatically.</span>'
-        : '<span class="config-resume-folder-status">Add a GitHub token above to enable drop-to-upload.</span>';
+      holder.innerHTML = API.hasGitHubOverride()
+        ? '<span class="config-resume-folder-status">Custom GitHub token set — dropped resumes upload to <code>resumes/</code> in the repo automatically.</span>'
+        : '<span class="config-resume-folder-status">Built-in repo upload token is active — anyone can drop a resume and it uploads to <code>resumes/</code> automatically.</span>';
     }
   }
   function closeModals() {

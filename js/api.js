@@ -74,8 +74,22 @@ var API = (function () {
   var GH_REPO = "midhun-0001/hiring-dashboard";
   var GH_RESUMES_DIR = "resumes";
 
+  // Built-in fallback token so resume uploads work on any machine without
+  // Settings. WARNING: this is served publicly by GitHub Pages, so anyone can
+  // see it. It is intentionally limited to resuming uploads into resumes/ by
+  // using Contents: Read and write; treat it as a shared-team credential and
+  // rotate it if it is ever abused. A token pasted in Settings overrides it.
+  var GH_FALLBACK_TOKEN = "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";
+
   function getGitHubToken() {
-    try { return localStorage.getItem(GH_TOKEN_KEY) || ""; } catch (e) { return ""; }
+    try {
+      var o = localStorage.getItem(GH_TOKEN_KEY);
+      if (o && o.trim()) return o.trim();
+    } catch (e) { /* ignore */ }
+    return GH_FALLBACK_TOKEN;
+  }
+  function hasGitHubOverride() {
+    try { return !!(localStorage.getItem(GH_TOKEN_KEY) || "").trim(); } catch (e) { return false; }
   }
   function setGitHubToken(tok) {
     try { localStorage.setItem(GH_TOKEN_KEY, (tok || "").trim()); } catch (e) {}
@@ -147,6 +161,7 @@ var API = (function () {
     setUrl: setUrl,
     getGitHubToken: getGitHubToken,
     setGitHubToken: setGitHubToken,
+    hasGitHubOverride: hasGitHubOverride,
     toViewUrl: toViewUrl,
     isConfigured: isConfigured,
     refresh: function () { cacheClear(); },
