@@ -96,16 +96,30 @@ html[data-theme="dark"] {
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+html {
+  /* iOS inflates text in landscape without this */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   font-family: var(--font);
   background: var(--bg);
   color: var(--text);
   font-size: 14px;
   line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
 }
 
 button { font-family: inherit; cursor: pointer; }
-input, select { font-family: inherit; font-size: 14px; }
+input, select, textarea { font-family: inherit; font-size: 14px; }
+
+/* iOS Safari zooms the whole page when you focus a control whose font-size is
+   under 16px. Every input here was 14px, so tapping any field yanked the layout
+   about. 16px on touch-primary devices stops it; desktop keeps the tighter 14px. */
+@media (hover: none) and (pointer: coarse) {
+  input, select, textarea, .input { font-size: 16px; }
+}
 
 /* ---------- Top bar ---------- */
 .topbar {
@@ -114,6 +128,8 @@ input, select { font-family: inherit; font-size: 14px; }
   position: sticky;
   top: 0;
   z-index: 20;
+  /* clear the notch when the page is behind it (viewport-fit=cover) */
+  padding-top: env(safe-area-inset-top, 0px);
 }
 .topbar-inner {
   max-width: 1200px;
@@ -122,6 +138,11 @@ input, select { font-family: inherit; font-size: 14px; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
+  /* flex-wrap was missing, which made the mobile `.nav { order: 3; width: 100% }`
+     rule inert - a non-wrapping row cannot push a child onto its own line, so
+     everything just squeezed together instead. */
+  flex-wrap: wrap;
 }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand-img { height: 26px; width: auto; display: block; }
@@ -268,7 +289,9 @@ input, select { font-family: inherit; font-size: 14px; }
   position: sticky; top: 70px;
   /* without a cap, a rail taller than the viewport gets stuck with its lower
      half permanently off-screen and unreachable */
-  max-height: calc(100vh - 90px); overflow-y: auto;
+  max-height: calc(100vh - 90px);
+  max-height: calc(100dvh - 90px);
+  overflow-y: auto;
   scrollbar-width: thin;
 }
 .rail-panel { margin-bottom: 0; }
@@ -409,6 +432,9 @@ input, select { font-family: inherit; font-size: 14px; }
 .table tbody tr.rejected-row td { background: rgba(220, 38, 38, 0.06); }
 .table tbody tr.rejected-row .cell-primary { color: var(--red); }
 .table tbody tr.rejected-row .status-select { color: var(--red); }
+.table tbody tr.status-selected-row td { background: rgba(16, 185, 129, 0.08); }
+.table tbody tr.status-selected-row .cell-primary { color: var(--green); }
+.table tbody tr.status-selected-row .status-select { color: var(--green); }
 .cell-primary { font-weight: 600; }
 .cell-sub { color: var(--muted); font-size: 12px; }
 
@@ -429,8 +455,13 @@ input, select { font-family: inherit; font-size: 14px; }
   border-radius: var(--radius);
   width: 100%; max-width: 480px;
   box-shadow: 0 20px 50px rgba(16, 24, 40, 0.25);
+  /* 100vh on mobile counts the area behind the browser chrome, so the card grew
+     taller than the visible viewport and the Save/Cancel row sat off-screen.
+     dvh tracks the *visible* height; the vh line stays as a fallback. */
   max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex; flex-direction: column;
 }
 .modal-head {
@@ -634,12 +665,118 @@ td .inline-loader { padding: 22px 8px; }
   .chart-hbar-fill { transition: none; }
 }
 
+/* ============================================================
+   Mobile / tablet
+   ============================================================ */
+
+@media (max-width: 900px) {
+  .container { padding: 16px 12px; }
+  .topbar-inner { padding: 10px 12px; }
+  .panel { margin-bottom: 16px; }
+  .panel-head { padding: 14px 16px; gap: 10px; }
+  .roles-grid { padding: 16px; gap: 12px; }
+  .role-search-wrap { margin: 14px 16px 0; }
+  .cand-sections { padding: 16px; gap: 16px; }
+  .cand-grid { padding: 12px; gap: 10px; }
+  .detail-actions { padding: 0 16px 16px; }
+  .pipeline { padding: 16px; }
+  .filter-row { padding: 12px 16px; }
+  .error-banner { margin: 12px 12px 0; }
+}
+
 @media (max-width: 720px) {
-  .stats-grid { grid-template-columns: 1fr; }
+  /* --- top bar: brand + actions on row 1, nav full-width on row 2 --- */
+  .topbar-inner { justify-content: space-between; }
+  .brand { flex: 0 0 auto; }
+  .topbar-actions { flex: 0 0 auto; gap: 4px; }
+  .nav {
+    order: 3; width: 100%;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav-btn { flex: 1 0 auto; white-space: nowrap; text-align: center; }
+  /* icon-only actions - four labelled buttons do not fit a phone width */
+  .topbar-actions .btn span { display: none; }
+  .topbar-actions .btn { padding: 9px 10px; }
+  .last-updated { display: none; }
+
+  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .stat-card { padding: 14px; }
+  .stat-value { font-size: 22px; }
+
   .config-banner-form { min-width: 100%; }
-  .panel-tools { flex-direction: column; width: 100%; }
-  .panel-tools .input { width: 100%; }
-  .nav { order: 3; width: 100%; overflow-x: auto; }
+  .panel-tools { flex-direction: column; width: 100%; align-items: stretch; }
+  .panel-tools .input, .panel-tools .btn { width: 100%; }
+  .panel-tools .btn { justify-content: center; }
+
+  /* segmented control spans the width so both halves are easy to hit */
+  .seg { width: 100%; }
+  .seg-btn { flex: 1; justify-content: center; }
+
+  .filter-row .input { width: 100%; flex: 1 1 100%; }
+  .roles-grid { grid-template-columns: 1fr; }
+  .role-facts { margin-left: 0; width: 100%; }
+
+  /* modals become sheets docked to the bottom - far easier to reach one-handed */
+  .modal { padding: 0; align-items: flex-end; }
+  .modal-card {
+    max-width: 100%;
+    border-radius: var(--radius) var(--radius) 0 0;
+    max-height: 92vh;
+    max-height: 92dvh;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .modal-actions { flex-direction: column-reverse; align-items: stretch; }
+  .modal-actions .btn { width: 100%; justify-content: center; }
+  .modal-actions .btn-danger { margin-right: 0; margin-top: 4px; }
+
+  .toast { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: calc(100vw - 24px); text-align: center; }
+
+  /* comfortable touch targets (Apple/Google both recommend ~44px) */
+  .btn { padding: 11px 16px; }
+  .btn-sm { padding: 8px 12px; font-size: 12.5px; }
+  .nav-btn { padding: 10px 14px; }
+}
+
+/* --- wide tables on narrow screens ---
+   The applicants (7 col) and interviews (8 col) tables cannot fit a phone, so
+   they scroll sideways. Pinning the first column keeps the candidate's name in
+   view while you scroll to Status / Result, which is what makes the scroll
+   usable rather than disorienting. All cells stay interactive. */
+@media (max-width: 720px) {
+  .table-wrap {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+  .table { font-size: 13px; }
+  .table th, .table td { padding: 10px 12px; }
+
+  .table thead th:first-child,
+  .table tbody td:first-child {
+    position: sticky; left: 0; z-index: 1;
+    background: var(--surface);
+    /* hairline so the pinned column reads as separate from what scrolls under it */
+    box-shadow: 1px 0 0 var(--border);
+    max-width: 42vw;
+  }
+  .table thead th:first-child { z-index: 2; background: var(--surface); }
+  /* the row tints must win over the sticky cell's own background */
+  .table tbody tr.rejected-row td:first-child { background: var(--red-bg); }
+  .table tbody tr.iv-row-today td:first-child { background: var(--amber-bg); }
+  .table tbody tr.clickable:hover td:first-child { background: var(--hover); }
+
+  .table .iv-note { min-width: 150px; }
+  .table .iv-result, .table .status-select { min-width: 116px; }
+}
+
+@media (max-width: 420px) {
+  .stats-grid { grid-template-columns: 1fr; }
+  .empty-state { padding: 40px 16px; }
+  .empty-state-hint { max-width: 100%; }
+  .modal-head { padding: 14px 16px; }
+  #edit-form, #config-form, #add-form, #cal-form { padding: 16px; }
 }
 
 /* ---------- Nav ---------- */

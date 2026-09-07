@@ -37,6 +37,24 @@
     return s.indexOf("reject") !== -1 || s.indexOf("backout") !== -1;
   }
 
+  // Positive/selected statuses render the row green in the lists, mirroring the
+  // green badge set (Selected, Hired, Done, Final, Next Round, PSR, ...).
+  function isSelectedStatus(status) {
+    var s = String(status || "").trim().toLowerCase();
+    if (!s) return false;
+    if (s === "done" || s === "hired" || s === "selected" || s.indexOf("selected") !== -1) return true;
+    if (s.indexOf("final") !== -1) return true;
+    if (s === "next round" || s.indexOf("psr") !== -1) return true;
+    return false;
+  }
+
+  // Reuse for both lists: green wins over red (a hire supersedes a reject mark).
+  function statusRowClass(status) {
+    if (isSelectedStatus(status)) return "status-selected-row";
+    if (isRejected(status)) return "rejected-row";
+    return "";
+  }
+
   // Track button in the lists. Disabled for rejected profiles so a closed
   // profile can't be added to the interview tracker.
   function trackBtn(a) {
@@ -668,7 +686,7 @@
       return (isRejected(a.status) ? 1 : 0) - (isRejected(b.status) ? 1 : 0);
     });
     var rows = sorted.map(function (a) {
-      return '<tr class="clickable' + (isRejected(a.status) ? ' rejected-row' : '') + '" data-id="' + esc(a.id) + '">' +
+      return '<tr class="clickable ' + statusRowClass(a.status) + '" data-id="' + esc(a.id) + '">' +
         '<td class="cell-primary">' + esc(a.name) + '</td>' +
         '<td><select class="input status-select pipe-status" data-id="' + esc(a.id) + '" data-prev="' + esc(a.status || "") + '" title="Change status">' + statusOptions(a.status) + '</select></td>' +
         '<td>' + esc(a.experience || "—") + '</td>' +
@@ -919,7 +937,7 @@
     empty.classList.toggle("hidden", list.length !== 0);
     if (!list.length) { body.innerHTML = ""; return; }
     body.innerHTML = list.map(function (a) {
-      return '<tr class="clickable' + (isRejected(a.status) ? ' rejected-row' : '') + '" data-id="' + esc(a.id) + '">' +
+      return '<tr class="clickable ' + statusRowClass(a.status) + '" data-id="' + esc(a.id) + '">' +
         '<td><div class="cell-primary">' + esc(a.name) + '</div><div class="cell-sub">' + esc(a.id || "") + '</div></td>' +
         '<td>' + esc(a.roleTitle) + '</td>' +
         '<td>' + esc(a.experience || "—") + '</td>' +

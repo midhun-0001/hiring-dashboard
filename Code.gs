@@ -88,8 +88,16 @@ var SETTINGS = {
   // Interviewer directory. Source of the "Interviewer" dropdown options in the
   // tracker modal (name + email). A Name | B Email. New interviewers added from
   // the UI are persisted here so they appear in the dropdown next time.
+  // READ source. The real sheet's "Interviewers" tab is a panel matrix
+  // (Initial Technical | Cultutral Fit | Final Technical) whose cells hold
+  // things like "Palaniappan + Akshaansh" or four newline-separated names -
+  // NOT a Name|Email directory. readInterviewers_ parses individual people out
+  // of whichever shape it finds.
   INTERVIEWERS_TAB_NAME: "Interviewers",
-  INTERVIEWERS_COLS: { name:0, email:1 }
+  INTERVIEWERS_COLS: { name:0, email:1 },
+  // WRITE target. Never append to the matrix above - that would corrupt it.
+  // Created on demand with a proper Name | Email header.
+  INTERVIEWER_DIR_TAB_NAME: "Interviewer Directory"
 };
 
 function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
@@ -372,44 +380,109 @@ function readInterviewers_() {
   return memo_("interviewers", readInterviewersUncached_);
 }
 
+/* Words that mark a cell as prose rather than a person's name. The panel matrix
+ * contains entries like "One of the founders" and
+ * "Need to find someone (Palaniappan Professor, ask Aditya, Lokesh Circle)". */
+var NON_NAME_STARTS = ["one", "need", "ask", "to", "the", "any", "tbd", "na",
+  "n/a", "none", "no", "yet", "someone", "find", "hr", "team"];
+
+/* Pull individual people out of one free-text cell.
+ * Cells hold things like "Palaniappan + Akshaansh" or a newline-separated list,
+ * so a cell can yield several names - or none, if it is prose. */
+function namesFromCell_(cell) {
+  var raw = norm_(cell);
+  if (!raw) return [];
+  if (raw.indexOf("(") !== -1) return [];          // parenthetical prose
+  return raw.split(/[\n\r+,;&\/]+/).map(function (part) {
+    return norm_(part);
+  }).filter(function (t) {
+    if (!t) return false;
+    if (t.length < 2 || t.length > 40) return false;
+    if (!/^[A-Za-z]/.test(t)) return false;         // must start with a letter
+    var words = t.split(/\s+/);
+    if (words.length > 3) return false;             // 4+ words is a sentence
+    if (NON_NAME_STARTS.indexOf(words[0].toLowerCase()) !== -1) return false;
+    return true;
+  });
+}
+
+/* Interviewer options for the tracker modal.
+ * Two sources, merged:
+ *   1. "Interviewer Directory" - a clean Name | Email tab this app owns and
+ *      writes to. Takes precedence, and is the only source with emails.
+ *   2. "Interviewers" - the team's existing panel matrix, parsed for names.
+ * Reading the matrix as if it were Name|Email is what produced dropdown entries
+ * like "Palaniappan + Akshaansh" and a single option holding four names. */
 function readInterviewersUncached_() {
+  var out = [], seen = {};
+  function add(name, email) {
+    var key = String(name).toLowerCase();
+    if (!name || seen[key]) return;
+    seen[key] = true;
+    out.push({ name: name, email: email || "" });
+  }
+
+  // 1. the directory this app owns
+  var dir = ss_().getSheetByName(SETTINGS.INTERVIEWER_DIR_TAB_NAME);
+  if (dir && dir.getLastRow() >= 2) {
+    var drows = dir.getRange(2, 1, dir.getLastRow() - 1, 2).getValues();
+    for (var i = 0; i < drows.length; i++) add(norm_(drows[i][0]), norm_(drows[i][1]));
+  }
+
+  // 2. names parsed out of the existing panel matrix
   var sh = ss_().getSheetByName(SETTINGS.INTERVIEWERS_TAB_NAME);
-  if (!sh) {
-    sh = ss_().insertSheet(SETTINGS.INTERVIEWERS_TAB_NAME);
-    sh.getRange(1, 1, 1, 2).setValues([["Interviewer Name", "Interviewer Email"]]);
+  if (sh && sh.getLastRow() >= 1) {
+    var rows = sh.getLastRow(), cols = Math.max(sh.getLastColumn(), 1);
+    var grid = sh.getRange(1, 1, rows, cols).getValues();
+    var roleTitles = {};
+    readRoles_().forEach(function (r) { roleTitles[normTitle_(r.title)] = true; });
+    for (var r2 = 1; r2 < grid.length; r2++) {          // skip the header row
+      for (var c = 0; c < grid[r2].length; c++) {
+        namesFromCell_(grid[r2][c]).forEach(function (nm) {
+          if (roleTitles[normTitle_(nm)]) return;       // a role, not a person
+          add(nm, "");
+        });
+      }
+    }
   }
-  var out = [];
-  var lastRow = sh.getLastRow();
-  if (lastRow < 2) return out;
-  var data = sh.getRange(1, 1, lastRow, 2).getValues();
-  for (var i = 1; i < data.length; i++) {
-    var name = norm_(data[i][0]);
-    if (!name) continue;
-    out.push({ name: name, email: norm_(data[i][1]) });
-  }
+
+  out.sort(function (a, b) { return a.name.localeCompare(b.name); });
   return out;
 }
 
-// Add (or update) an interviewer in the directory; returns the saved entry.
-// Matching is case-insensitive on the name to avoid duplicates.
+// The tab this app writes to, created on demand. Deliberately NOT the panel
+// matrix - appending Name|Email rows there would corrupt it.
+function interviewerDirSheet_() {
+  var sh = ss_().getSheetByName(SETTINGS.INTERVIEWER_DIR_TAB_NAME);
+  if (!sh) {
+    sh = ss_().insertSheet(SETTINGS.INTERVIEWER_DIR_TAB_NAME);
+    sh.getRange(1, 1, 1, 2).setValues([["Interviewer Name", "Interviewer Email"]]);
+    sh.setFrozenRows(1);
+  } else if (sh.getLastRow() < 1) {
+    sh.getRange(1, 1, 1, 2).setValues([["Interviewer Name", "Interviewer Email"]]);
+  }
+  return sh;
+}
+
+// Add (or update) an interviewer. Matching is case-insensitive on the name.
 function addInterviewer_(name, email) {
   var n = norm_(name);
   if (!n) throw new Error("interviewer name required");
-  var sh = ss_().getSheetByName(SETTINGS.INTERVIEWERS_TAB_NAME);
-  if (!sh) readInterviewers_(); // creates the tab + header
-  sh = ss_().getSheetByName(SETTINGS.INTERVIEWERS_TAB_NAME);
+  var sh = interviewerDirSheet_();
   var emailVal = norm_(email);
-  var list = readInterviewers_();
-  for (var i = 0; i < list.length; i++) {
-    if (String(list[i].name).toLowerCase() === n.toLowerCase()) {
-      // existing interviewer: refresh the email.
-      sh.getRange(i + 2, 2, 1, 1).setValue(emailVal);
-      memoClear_();  // the caller re-reads the directory for its response
-      return { name: list[i].name, email: emailVal };
+
+  if (sh.getLastRow() >= 2) {
+    var rows = sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues();
+    for (var i = 0; i < rows.length; i++) {
+      if (norm_(rows[i][0]).toLowerCase() === n.toLowerCase()) {
+        sh.getRange(i + 2, 2, 1, 1).setValue(emailVal);   // refresh the email
+        memoClear_();   // the caller re-reads the directory for its response
+        return { name: norm_(rows[i][0]), email: emailVal };
+      }
     }
   }
   sh.getRange(sh.getLastRow() + 1, 1, 1, 2).setValues([[n, emailVal]]);
-  memoClear_();      // ditto - without this the new name is missing from the reply
+  memoClear_();         // without this the new name is missing from the reply
   return { name: n, email: emailVal };
 }
 
