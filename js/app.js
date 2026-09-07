@@ -37,15 +37,9 @@
     return s.indexOf("reject") !== -1 || s.indexOf("backout") !== -1;
   }
 
-  // Positive/selected statuses render the row green in the lists, mirroring the
-  // green badge set (Selected, Hired, Done, Final, Next Round, PSR, ...).
+  // Only the exact status "Selected" renders the row green in the lists.
   function isSelectedStatus(status) {
-    var s = String(status || "").trim().toLowerCase();
-    if (!s) return false;
-    if (s === "done" || s === "hired" || s === "selected" || s.indexOf("selected") !== -1) return true;
-    if (s.indexOf("final") !== -1) return true;
-    if (s === "next round" || s.indexOf("psr") !== -1) return true;
-    return false;
+    return String(status || "").trim().toLowerCase() === "selected";
   }
 
   // Reuse for both lists: green wins over red (a hire supersedes a reject mark).
