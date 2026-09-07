@@ -79,7 +79,7 @@ var API = (function () {
   // see it. It is intentionally limited to resuming uploads into resumes/ by
   // using Contents: Read and write; treat it as a shared-team credential and
   // rotate it if it is ever abused. A token pasted in Settings overrides it.
-  var GH_FALLBACK_TOKEN = "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";
+  var GH_FALLBACK_TOKEN = "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";
 
   function getGitHubToken() {
     try {
