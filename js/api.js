@@ -69,6 +69,19 @@ var API = (function () {
   var MAX_ATTEMPTS = 3;
   var RETRY_DELAY = [700, 1500];
 
+  // --- GitHub token (for direct repo uploads via Contents API) ---
+  var GH_TOKEN_KEY = "hiring_gh_token";
+  var GH_REPO = "midhun-0001/hiring-dashboard";
+  var GH_RESUMES_DIR = "resumes";
+
+  function getGitHubToken() {
+    try { return localStorage.getItem(GH_TOKEN_KEY) || ""; } catch (e) { return ""; }
+  }
+  function setGitHubToken(tok) {
+    try { localStorage.setItem(GH_TOKEN_KEY, (tok || "").trim()); } catch (e) {}
+    return getGitHubToken();
+  }
+
   function isTransientError(err) {
     var msg = String((err && err.message) || err);
     // Network / redirect / timeout symptoms worth an automatic retry:
@@ -123,6 +136,8 @@ var API = (function () {
   return {
     getUrl: getUrl,
     setUrl: setUrl,
+    getGitHubToken: getGitHubToken,
+    setGitHubToken: setGitHubToken,
     isConfigured: isConfigured,
     refresh: function () { cacheClear(); },
     // Everything needed for first paint in one round trip (see Code.gs).
@@ -200,6 +215,75 @@ var API = (function () {
        its alphabet (A-Za-z0-9-_) survives URL encoding unexpanded, where
        standard base64's "+", "/" and "=" would each inflate to 3 characters. */
     MAX_RESUME_BYTES: 8 * 1024 * 1024,
+    /* Upload a resume file directly to the git repo via the GitHub Contents
+       API. GitHub commits the file to {repo}/resumes/ and returns a raw
+       download_url, which is stored as the candidate's resume link. */
+    GITHUB_LIMIT_BYTES: 6 * 1024 * 1024,
+    uploadToGitHub: function (file, subject, opts) {
+      var self = this;
+      return new Promise(function (resolve, reject) {
+        var tok = getGitHubToken();
+        if (!tok) {
+          reject(new Error("Add a GitHub personal access token in Settings to enable resume uploads."));
+          return;
+        }
+        if (!file) { reject(new Error("No file selected.")); return; }
+        if (file.size > self.GITHUB_LIMIT_BYTES) {
+          reject(new Error("That file is " + (file.size / 1048576).toFixed(1) +
+            " MB. GitHub's limit is " + (self.GITHUB_LIMIT_BYTES / 1048576) + " MB."));
+          return;
+        }
+
+        var reader = new FileReader();
+        reader.onerror = function () { reject(new Error("Could not read that file.")); };
+        reader.onload = function () {
+          var raw = String(reader.result || "");
+          var comma = raw.indexOf(",");
+          var b64 = comma >= 0 ? raw.slice(comma + 1) : raw;
+          if (!b64) { reject(new Error("That file appears to be empty.")); return; }
+
+          var ext = String(file.name || "resume.pdf").replace(/^.*\./, "").toLowerCase() || "bin";
+          var safe = (subject || "resume").replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "resume";
+          var name = safe + "-" + Date.now() + "." + ext;
+          var path = GH_RESUMES_DIR + "/" + encodeURIComponent(name);
+
+          var body = {
+            message: "Add resume: " + name,
+            content: b64,
+            branch: "master"
+          };
+
+          fetch("https://api.github.com/repos/" + GH_REPO + "/contents/" + path, {
+            method: "PUT",
+            headers: {
+              "Authorization": "token " + tok,
+              "Accept": "application/vnd.github.v3+json",
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(body)
+          }).then(function (res) {
+            return res.json().catch(function () { return {}; }).then(function (data) {
+              if (res.status >= 200 && res.status < 300) {
+                if (data && data.content && data.content.download_url) {
+                  return { url: data.content.download_url, name: name, status: res.status };
+                }
+                throw new Error("Resume committed but no download link came back.");
+              }
+              // pipe through GitHub's most useful error message
+              var m = data && data.message ? String(data.message) : "HTTP " + res.status;
+              if (data && data.errors && data.errors[0] && data.errors[0].message) {
+                m += " (" + data.errors[0].message + ")";
+              }
+              throw new Error("Upload failed: " + m);
+            });
+          }).then(function (data) {
+            cacheClear();
+            resolve(data);
+          }).catch(reject);
+        };
+        reader.readAsDataURL(file);
+      });
+    },
     uploadResume: function (file, opts) {
       var self = this;
       return new Promise(function (resolve, reject) {

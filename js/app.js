@@ -318,13 +318,15 @@
 
   function openConfigModal() {
     $("config-input").value = API.getUrl();
+    var gh = $("config-github-token");
+    if (gh) gh.value = API.getGitHubToken();
     $("config-modal").classList.remove("hidden");
-    // Resumes now use the local/git workflow (no Drive upload): save a copy,
-    // drop it into the repo under resumes/, then paste the GitHub raw link into
-    // the candidate's Resume field.
     var holder = $("config-resume-folder");
     if (holder) {
-      holder.innerHTML = '<span class="config-resume-folder-status">Resumes are stored in the repo (resumes/) and linked by GitHub raw URL — not uploaded to Drive.</span>';
+      var tok = API.getGitHubToken();
+      holder.innerHTML = tok
+        ? '<span class="config-resume-folder-status">GitHub token set — dropped resumes upload to <code>resumes/</code> in the repo automatically.</span>'
+        : '<span class="config-resume-folder-status">Add a GitHub token above to enable drop-to-upload.</span>';
     }
   }
   function closeModals() {
@@ -1046,9 +1048,8 @@
   function group(title, inner) { return '<div class="cand-group"><h3>' + title + '</h3>' + inner + '</div>'; }
 
   // Resume field shown on the candidate profile: an editable link box plus a
-  // Dropzone for the local/git workflow: it does NOT upload anywhere. It saves a
-  // copy of the file so you can drop it into the repo, and you paste the GitHub
-  // raw link into the resume field below.
+  // Dropzone. Dropping a resume uploads it straight to resumes/ in the git repo
+  // (GitHub Contents API) and fills the resume link with its raw URL.
   function resumeField(c) {
     var link = c.resume
       ? '<a class="cand-resume-link" href="' + esc(c.resume) + '" target="_blank" rel="noopener">View Resume</a>'
@@ -1056,8 +1057,8 @@
     return '<div class="detail-item"><div class="k">Resume / CV link</div><div class="v">' +
       '<input class="input cedit resume-link-input" data-key="resume" type="text" value="' + esc(c.resume || "") + '" placeholder="Paste a GitHub raw link" /></div></div>' +
       '<div class="detail-item" style="grid-column:1/-1"><div class="v">' +
-      '<div class="resume-drop" id="cand-resume-drop" data-id="' + esc(c.id) + '">' +
-        '<div class="resume-drop-inner">Drop a resume to save it locally for the repo, or <span class="link">browse</span></div>' +
+      '<div class="resume-drop" id="cand-resume-drop" data-id="' + esc(c.id) + '" data-name="' + esc(c.name) + '">' +
+        '<div class="resume-drop-inner">Drop a resume to upload it to the repo (resumes/), or <span class="link">browse</span></div>' +
         '<span class="resume-drop-status">' + link + '</span>' +
         '<input type="file" class="resume-file-input" accept=".pdf,.doc,.docx,image/*" />' +
       '</div></div></div>';
@@ -1080,23 +1081,35 @@
     function handleFile(file) {
       if (!file) return;
       dropEl.classList.add("uploading");
-      setStatus("Saving " + file.name + " locally…");
-      // Local/git workflow: no Drive upload. Hand back a clean copy of the file
-      // so the user can drop it into the repo, then paste the GitHub raw link
-      // into the resume field.
-      var src = null;
-      try { src = URL.createObjectURL(file); } catch (e) { src = null; }
-      if (src) {
-        var a = document.createElement("a");
-        a.href = src;
-        a.download = file.name || "resume";
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(function () { try { URL.revokeObjectURL(src); } catch (e) {} }, 8000);
-      }
-      dropEl.classList.remove("uploading");
-      setStatus("Saved " + esc(file.name) + " locally. Add it under resumes/ in the repo, commit & push, then paste the GitHub raw link into the resume field above.");
+      setStatus("Uploading " + esc(file.name) + " to resumes/…");
+      var subject = dropEl.dataset.name || dropEl.dataset.id || "resume";
+      API.uploadToGitHub(file, subject).then(function (res) {
+        dropEl.classList.remove("uploading");
+        if (!res || !res.url) { setStatus("Upload finished but no link came back.", true); return; }
+        // Fill the resume link field next to the dropzone with the raw GitHub
+        // URL so the candidate gets a working view link.
+        var input = (dropEl.id === "add-resume-drop")
+          ? document.getElementById("add-resume")
+          : document.querySelector('.resume-link-input[data-key="resume"]');
+        if (input) input.value = res.url;
+        if (dropEl.id === "add-resume-drop") {
+          setStatus('Uploaded <a class="cand-resume-link" href="' + esc(res.url) + '" target="_blank" rel="noopener">' + esc(res.name) + "</a>. Link saved above — it will be stored when you save the candidate.");
+        } else {
+          // Profile view: persist right away so the candidate has the link now.
+          var cid = dropEl.dataset.id;
+          API.update(cid, "resume", res.url).then(function () {
+            if (state.currentCandidate) state.currentCandidate.resume = res.url;
+            var inp = document.querySelector('.resume-link-input[data-key="resume"]');
+            if (inp) inp.value = res.url;
+            setStatus('Uploaded <a class="cand-resume-link" href="' + esc(res.url) + '" target="_blank" rel="noopener">' + esc(res.name) + "</a> — view link saved to the sheet.");
+            toast("Resume uploaded & linked");
+            loadDashboard();
+          }).catch(showError);
+        }
+      }).catch(function (err) {
+        dropEl.classList.remove("uploading");
+        setStatus(err && err.message ? esc(err.message) : "Upload failed.", true);
+      });
     }
 
     fileInput.addEventListener("change", function () { handleFile(fileInput.files && fileInput.files[0]); });
@@ -1802,7 +1815,7 @@
   $("config-btn").addEventListener("click", openConfigModal);
   $("config-modal-close").addEventListener("click", closeModals);
 
-  $("config-form").addEventListener("submit", function (e) { e.preventDefault(); API.setUrl($("config-input").value.trim()); closeModals(); applyConfigUI(); });
+  $("config-form").addEventListener("submit", function (e) { e.preventDefault(); API.setUrl($("config-input").value.trim()); var gh = $("config-github-token"); if (gh) API.setGitHubToken(gh.value); closeModals(); applyConfigUI(); });
   $("config-clear-btn").addEventListener("click", function () { API.setUrl(""); closeModals(); applyConfigUI(); });
   $("config-save-btn").addEventListener("click", function () { API.setUrl($("config-url-input").value.trim()); applyConfigUI(); });
   $("error-dismiss").addEventListener("click", function () { $("error-banner").classList.add("hidden"); });
