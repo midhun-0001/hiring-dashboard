@@ -82,6 +82,15 @@ var API = (function () {
     return getGitHubToken();
   }
 
+  // Turn a raw.githubusercontent.com URL into the GitHub blob page so clicks
+  // OPEN the file in GitHub's online viewer instead of downloading it.
+  function toViewUrl(url) {
+    var s = String(url || "").trim();
+    var m = s.match(/^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/);
+    if (!m) return s;
+    return "https://github.com/" + m[1] + "/" + m[2] + "/blob/" + m[3] + "/" + m[4];
+  }
+
   function isTransientError(err) {
     var msg = String((err && err.message) || err);
     // Network / redirect / timeout symptoms worth an automatic retry:
@@ -138,6 +147,7 @@ var API = (function () {
     setUrl: setUrl,
     getGitHubToken: getGitHubToken,
     setGitHubToken: setGitHubToken,
+    toViewUrl: toViewUrl,
     isConfigured: isConfigured,
     refresh: function () { cacheClear(); },
     // Everything needed for first paint in one round trip (see Code.gs).
@@ -265,7 +275,7 @@ var API = (function () {
             return res.json().catch(function () { return {}; }).then(function (data) {
               if (res.status >= 200 && res.status < 300) {
                 if (data && data.content && data.content.download_url) {
-                  return { url: data.content.download_url, name: name, status: res.status };
+                  return { url: data.content.download_url, viewUrl: toViewUrl(data.content.download_url), name: name, status: res.status };
                 }
                 throw new Error("Resume committed but no download link came back.");
               }

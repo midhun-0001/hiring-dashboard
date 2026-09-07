@@ -675,7 +675,7 @@
         '<td>' + esc(a.experience || "—") + '</td>' +
         '<td>' + esc(a.ctc || "—") + '</td>' +
         '<td>' + esc(a.phone || "—") + '</td>' +
-        '<td>' + (a.resume ? '<a href="' + esc(a.resume) + '" target="_blank" rel="noopener" class="resume-link" title="Open resume">View</a>' : "—") + '</td>' +
+        '<td>' + (a.resume ? '<a href="' + esc(API.toViewUrl(a.resume)) + '" target="_blank" rel="noopener" class="resume-link" title="Open resume">View</a>' : "—") + '</td>' +
         '<td>' + (a.email ? esc(a.email) : "—") + '</td>' +
         '<td><input class="input pipe-review" data-id="' + esc(a.id) + '" value="' + esc(a.reviewAnisha || "") + '" placeholder="Short review…" title="Type a short review, then press Enter / click away to save" /></td>' +
         '<td>' + trackBtn(a) + '</td>' +
@@ -1052,7 +1052,7 @@
   // (GitHub Contents API) and fills the resume link with its raw URL.
   function resumeField(c) {
     var link = c.resume
-      ? '<a class="cand-resume-link" href="' + esc(c.resume) + '" target="_blank" rel="noopener">View Resume</a>'
+      ? '<a class="cand-resume-link" href="' + esc(API.toViewUrl(c.resume)) + '" target="_blank" rel="noopener">View Resume</a>'
       : '<span class="muted">No resume linked yet</span>';
     return '<div class="detail-item"><div class="k">Resume / CV link</div><div class="v">' +
       '<input class="input cedit resume-link-input" data-key="resume" type="text" value="' + esc(c.resume || "") + '" placeholder="Paste a GitHub raw link" /></div></div>' +
@@ -1086,22 +1086,22 @@
       API.uploadToGitHub(file, subject).then(function (res) {
         dropEl.classList.remove("uploading");
         if (!res || !res.url) { setStatus("Upload finished but no link came back.", true); return; }
-        // Fill the resume link field next to the dropzone with the raw GitHub
-        // URL so the candidate gets a working view link.
+        // Fill the resume link field next to the dropzone with the GitHub view
+        // link (blob page) so clicking it opens the file online in the viewer.
         var input = (dropEl.id === "add-resume-drop")
           ? document.getElementById("add-resume")
           : document.querySelector('.resume-link-input[data-key="resume"]');
-        if (input) input.value = res.url;
+        if (input) input.value = res.viewUrl || res.url;
         if (dropEl.id === "add-resume-drop") {
-          setStatus('Uploaded <a class="cand-resume-link" href="' + esc(res.url) + '" target="_blank" rel="noopener">' + esc(res.name) + "</a>. Link saved above — it will be stored when you save the candidate.");
+          setStatus('Uploaded <a class="cand-resume-link" href="' + esc(res.viewUrl || res.url) + '" target="_blank" rel="noopener">' + esc(res.name) + "</a>. Link saved above — it will be stored when you save the candidate.");
         } else {
           // Profile view: persist right away so the candidate has the link now.
           var cid = dropEl.dataset.id;
-          API.update(cid, "resume", res.url).then(function () {
-            if (state.currentCandidate) state.currentCandidate.resume = res.url;
+          API.update(cid, "resume", res.viewUrl || res.url).then(function () {
+            if (state.currentCandidate) state.currentCandidate.resume = res.viewUrl || res.url;
             var inp = document.querySelector('.resume-link-input[data-key="resume"]');
-            if (inp) inp.value = res.url;
-            setStatus('Uploaded <a class="cand-resume-link" href="' + esc(res.url) + '" target="_blank" rel="noopener">' + esc(res.name) + "</a> — view link saved to the sheet.");
+            if (inp) inp.value = res.viewUrl || res.url;
+            setStatus('Uploaded <a class="cand-resume-link" href="' + esc(res.viewUrl || res.url) + '" target="_blank" rel="noopener">' + esc(res.name) + "</a> — view link saved to the sheet.");
             toast("Resume uploaded & linked");
             loadDashboard();
           }).catch(showError);
