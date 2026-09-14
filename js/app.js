@@ -336,8 +336,8 @@
     var holder = $("config-resume-folder");
     if (holder) {
       holder.innerHTML = API.hasGitHubOverride()
-        ? '<span class="config-resume-folder-status">Custom GitHub token set — dropped resumes upload to <code>resumes/</code> in the repo automatically.</span>'
-        : '<span class="config-resume-folder-status">Built-in repo upload token is active — anyone can drop a resume and it uploads to <code>resumes/</code> automatically.</span>';
+        ? '<span class="config-resume-folder-status">GitHub token set on this device — dropped resumes upload to <code>resumes/</code> automatically.</span>'
+        : '<span class="config-resume-folder-status">Add a GitHub token above to enable drop-to-upload (stored only on this device).</span>';
     }
   }
   function closeModals() {

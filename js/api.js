@@ -74,19 +74,11 @@ var API = (function () {
   var GH_REPO = "midhun-0001/hiring-dashboard";
   var GH_RESUMES_DIR = "resumes";
 
-  // Built-in fallback token so resume uploads work on any machine without
-  // Settings. WARNING: this is served publicly by GitHub Pages, so anyone can
-  // see it. It is intentionally limited to resuming uploads into resumes/ by
-  // using Contents: Read and write; treat it as a shared-team credential and
-  // rotate it if it is ever abused. A token pasted in Settings overrides it.
-  var GH_FALLBACK_TOKEN = "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";
-
+  // No token is embedded in the code: anything hardcoded here is visible on the
+  // public GitHub Pages site and GitHub's secret scanning detects it in a push
+  // and auto-revokes it. Each browser supplies its own token via Settings.
   function getGitHubToken() {
-    try {
-      var o = localStorage.getItem(GH_TOKEN_KEY);
-      if (o && o.trim()) return o.trim();
-    } catch (e) { /* ignore */ }
-    return GH_FALLBACK_TOKEN;
+    try { return localStorage.getItem(GH_TOKEN_KEY) || ""; } catch (e) { return ""; }
   }
   function hasGitHubOverride() {
     try { return !!(localStorage.getItem(GH_TOKEN_KEY) || "").trim(); } catch (e) { return false; }
@@ -249,7 +241,7 @@ var API = (function () {
       return new Promise(function (resolve, reject) {
         var tok = getGitHubToken();
         if (!tok) {
-          reject(new Error("Add a GitHub personal access token in Settings to enable resume uploads."));
+          reject(new Error("No GitHub token on this device. Add one in Settings (gear icon) to enable resume uploads."));
           return;
         }
         if (!file) { reject(new Error("No file selected.")); return; }
