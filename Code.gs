@@ -280,7 +280,7 @@ function mapApplicant_(row) {
     review2: norm_(row[C.review2]),
     review3: norm_(row[C.review3]),
     review4: norm_(row[C.review4]),
-    earliestJoiningDate: isoDate_(row[C.earliestJoiningDate]),
+    earliestJoiningDate: norm_(row[C.earliestJoiningDate]),
     tab: SETTINGS.APP_TAB_NAME,
     role: role,
     roleTitle: role

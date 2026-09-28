@@ -1002,7 +1002,7 @@
       edit("Experience", "experience", c.experience),
       edit("CTC", "ctc", c.ctc),
       edit("Priority", "priority", c.priority),
-      edit("Earliest Joining Date", "earliestJoiningDate", c.earliestJoiningDate, { type: "date" })
+      edit("Earliest Joining Date", "earliestJoiningDate", c.earliestJoiningDate)
     ];
     sections.push(group("Candidate", grid(contact)));
 
