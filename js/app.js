@@ -417,6 +417,7 @@
         loadedApplicantsOnInit = true;   // Applicants tab opens with no fetch
         decisionsFetched = true;
         buildApplicantFilters();
+        renderApplicants();              // paint the table now; the nav guard would otherwise skip the fetch
       }
       if (b.tracker) {
         state.calendar = b.tracker;      // Interviews tab opens with no fetch
@@ -1000,7 +1001,8 @@
       resumeField(c),
       edit("Experience", "experience", c.experience),
       edit("CTC", "ctc", c.ctc),
-      edit("Priority", "priority", c.priority)
+      edit("Priority", "priority", c.priority),
+      edit("Earliest Joining Date", "earliestJoiningDate", c.earliestJoiningDate, { type: "date" })
     ];
     sections.push(group("Candidate", grid(contact)));
 
@@ -1051,7 +1053,7 @@
     val = val || "";
     var box = opts.rows
       ? '<textarea class="input cedit" data-key="' + esc(key) + '" rows="' + opts.rows + '">' + esc(val) + '</textarea>'
-      : '<input class="input cedit" data-key="' + esc(key) + '" type="text" value="' + esc(val) + '" />';
+      : '<input class="input cedit" data-key="' + esc(key) + '" type="' + (opts.type || "text") + '" value="' + esc(val) + '" />';
     var cls = kind === "review" ? "review-item" : "detail-item";
     return '<div class="' + cls + '"><div class="k">' + k + '</div><div class="v">' + box + '</div></div>';
   }
@@ -1684,8 +1686,9 @@
 
   var FIELD_MAP = {
     status: "J", priority: "I", ctc: "H", experience: "G",
-    reviewAnisha: "L", review1: "M", review2: "N", review3: "O", review4: "P",
-    name: "B", email: "C", phone: "D", position: "E", resume: "F"
+    reviewAnisha: "K", review1: "L", review2: "M", review3: "N", review4: "O",
+    name: "B", email: "C", phone: "D", position: "E", resume: "F",
+    earliestJoiningDate: "P"
   };
   // friendly field name -> {label, schema for edit}
   function field(val) { return { value: val || "" }; }
@@ -1816,7 +1819,10 @@
   document.querySelectorAll(".nav-btn").forEach(function (b) {
     b.addEventListener("click", function () {
       goView(b.dataset.view);
-      if (b.dataset.view === "applicants" && !state.allApplicants.length) loadAllApplicants();
+      if (b.dataset.view === "applicants") {
+        if (state.allApplicants.length) renderApplicants();
+        else loadAllApplicants();
+      }
       if (b.dataset.view === "interviews") renderInterviewsPage();
     });
   });

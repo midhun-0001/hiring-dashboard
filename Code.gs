@@ -62,7 +62,8 @@ var SETTINGS = {
   APP_COLS: {
     applicantId:0, name:1, email:2, phone:3, position:4, resume:5,
     experience:6, ctc:7, priority:8, status:9,
-    reviewAnisha:11, review1:12, review2:13, review3:14, review4:15
+    reviewAnisha:10, review1:11, review2:12, review3:13, review4:14,
+    earliestJoiningDate:15
   },
   // Interview tracker. Records are stored in a dedicated "Interview Events"
   // tab (source of truth). No Google Calendar events are created. NOTE: must
@@ -279,6 +280,7 @@ function mapApplicant_(row) {
     review2: norm_(row[C.review2]),
     review3: norm_(row[C.review3]),
     review4: norm_(row[C.review4]),
+    earliestJoiningDate: isoDate_(row[C.earliestJoiningDate]),
     tab: SETTINGS.APP_TAB_NAME,
     role: role,
     roleTitle: role
@@ -616,9 +618,10 @@ function allApplicants_(roles) {
 
 var FIELD_MAP = {
   status: "J", priority: "I", ctc: "H", experience: "G",
-  reviewAnisha: "L", review1: "M", review2: "N", review3: "O", review4: "P",
+  reviewAnisha: "K", review1: "L", review2: "M", review3: "N", review4: "O",
   name: "B", email: "C", phone: "D", position: "E", resume: "F",
-  role: "E"
+  role: "E",
+  earliestJoiningDate: "P"
 };
 
 // Find the applicant row by Applicant ID (case-insensitive) in the single
@@ -1218,6 +1221,7 @@ function addApplicant_(sh, p) {
   row[C.review2] = norm_(p.review2);
   row[C.review3] = norm_(p.review3);
   row[C.review4] = norm_(p.review4);
+  row[C.earliestJoiningDate] = norm_(p.earliestJoiningDate);
   var newRow = sh.getLastRow() + 1;
   sh.getRange(newRow, 1, 1, 16).setValues([row]);
   memoClear_();   // applicants list just grew
